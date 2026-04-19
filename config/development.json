@@ -1,0 +1,29 @@
+{
+  "agent": {
+    "max_iterations": 20,
+    "enable_memory": true
+  },
+  "llm": {
+    "provider": "openai",
+    "api_key": "${LLM_API_KEY}",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-flash",
+    "temperature": 0.7
+  },
+  "terminal": {
+    "shell": "/bin/bash",
+    "default_cols": 80,
+    "default_rows": 24
+  },
+  "memory": {
+    "database_path": "~/.termbot/memory/termbot.db",
+    "vector_db_path": "~/.termbot/memory/faiss",
+    "whoosh_index_dir": "~/.termbot/memory/whoosh_index",
+    "checkpoint_dir": "~/.termbot/memory/checkpoints",
+    "threshold": 0.8
+  },
+  "logging": {
+    "level": "DEBUG",
+    "file": "logs/termbot.log"
+  }
+}

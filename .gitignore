@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment variables (contains API keys)
+.env
+.env.local
+
+# Claude Code settings
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Search Index
+whooshIndex_*/
+whoosh_memory_index/
+*.index
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+~$*
+
+# Test files
+example.md
+*.jpg
+*.png

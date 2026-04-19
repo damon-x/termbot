@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Web Terminal (Vue3 + xterm.js + Flask)</title>
+
+        <!-- Vue 3 CDN -->
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+        <!-- Element Plus CDN -->
+        <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+        <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+
+        <!-- xterm.js 本地资源 -->
+        <link rel="stylesheet" href="/static/xterm.min.css">
+        <script src="/static/xterm.js"></script>
+        <script src="/static/xterm-addon-fit.js"></script>
+
+        <!-- Socket.io -->
+        <script src="/static/socket.io.min.js"></script>
+
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            #app {
+                width: 100vw;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                background: #f5f7fa;
+            }
+
+            .tab-bar {
+                height: 40px;
+                background: #fff;
+                border-bottom: 1px solid #dcdfe6;
+                display: flex;
+                align-items: center;
+                padding: 0 10px;
+                flex-shrink: 0;
+            }
+
+            .tab-item {
+                height: 32px;
+                padding: 0 15px;
+                margin-right: 4px;
+                background: #f0f2f5;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.3s;
+            }
+
+            .tab-item.active {
+                background: #409eff;
+                color: white;
+                border-color: #409eff;
+            }
+
+            .tab-item .close-btn {
+                margin-left: 8px;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                transition: background 0.3s;
+            }
+
+            .tab-item.active .close-btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+
+            .tab-item:not(.active) .close-btn:hover {
+                background: #dcdfe6;
+            }
+
+            .add-tab-btn {
+                width: 32px;
+                height: 32px;
+                border: 1px dashed #dcdfe6;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                font-size: 18px;
+                color: #909399;
+                margin-left: 4px;
+                transition: all 0.3s;
+            }
+
+            .add-tab-btn:hover {
+                border-color: #409eff;
+                color: #409eff;
+            }
+
+            .panel-container {
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .panel {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.3s;
+            }
+
+            .panel.active {
+                opacity: 1;
+                pointer-events: all;
+            }
+
+            .terminal-area {
+                width: 70%;
+                height: 100%;
+                background: #fffff0;
+                padding: 10px;
+            }
+
+            .terminal-wrapper {
+                width: 100%;
+                height: 100%;
+                background: #fffff0;
+                border-radius: 4px;
+                overflow: hidden;
+                position: relative;
+            }
+
+            .chat-area {
+                width: 30%;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                background: white;
+                border-left: 1px solid #dcdfe6;
+            }
+
+            .chat-header {
+                height: 50px;
+                padding: 0 20px;
+                border-bottom: 1px solid #dcdfe6;
+                display: flex;
+                align-items: center;
+                font-weight: 600;
+                font-size: 16px;
+                color: #303133;
+                flex-shrink: 0;
+            }
+
+            .chat-messages {
+                flex: 1;
+                padding: 15px;
+                overflow-y: auto;
+                background: white;
+            }
+
+            .message-item {
+                margin-bottom: 12px;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .message-bubble {
+                display: inline-block;
+                max-width: 85%;
+                padding: 10px 14px;
+                border-radius: 8px;
+                line-height: 1.5;
+                word-break: break-word;
+                white-space: pre-wrap;
+            }
+
+            .message-user {
+                align-items: flex-end;
+            }
+
+            .message-user .message-bubble {
+                background: #409eff;
+                color: white;
+                border-bottom-right-radius: 2px;
+            }
+
+            .message-bot {
+                align-items: flex-start;
+            }
+
+            .message-bot .message-bubble {
+                background: #f0f2f5;
+                color: #303133;
+                border-bottom-left-radius: 2px;
+            }
+
+            .message-time {
+                font-size: 12px;
+                color: #909399;
+                margin-top: 4px;
+            }
+
+            .chat-input-area {
+                padding: 15px;
+                border-top: 1px solid #dcdfe6;
+                background: white;
+                flex-shrink: 0;
+            }
+
+            .chat-input-wrapper {
+                display: flex;
+                gap: 10px;
+            }
+
+            .chat-textarea {
+                flex: 1;
+                min-height: 40px;
+                max-height: 120px;
+                padding: 8px 12px;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                resize: none;
+                font-family: inherit;
+                font-size: 14px;
+                line-height: 1.5;
+                transition: border-color 0.3s;
+            }
+
+            .chat-textarea:focus {
+                outline: none;
+                border-color: #409eff;
+            }
+
+            .send-btn {
+                height: 40px;
+                padding: 0 20px;
+                background: #409eff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.3s;
+                flex-shrink: 0;
+            }
+
+            .send-btn:hover {
+                background: #79bbff;
+            }
+
+            .send-btn:active {
+                background: #337ecc;
+            }
+
+            .xterm .xterm-screen {
+                position: relative;
+                z-index: 0;
+            }
+
+            .xterm .xterm-text-layer {
+                z-index: 2 !important;
+                pointer-events: none;
+            }
+
+            .xterm .xterm-cursor-layer {
+                z-index: 3 !important;
+            }
+
+            .xterm .xterm-cursor {
+                border-left: 2px solid #000000 !important;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div id="app"></div>
+
+        <script>
+            const { createApp, ref, reactive, computed, onMounted, onUnmounted, nextTick } = Vue;
+            const { ElMessage } = ElementPlus;
+
+            const app = createApp({
+                setup() {
+                    // 状态管理
+                    const tabs = ref([
+                        { id: 0, name: 'Terminal 1', active: true }
+                    ]);
+
+                    const panels = ref([]);
+                    const terminals = reactive({});
+                    const chatMessages = reactive({});
+
+                    // 当前活动标签ID
+                    const activeTabId = computed(() => {
+                        const tab = tabs.value.find(t => t.active);
+                        return tab ? tab.id : 0;
+                    });
+
+                    // 添加新标签
+                    const addTab = () => {
+                        const newId = tabs.value.length;
+                        const tabName = `Terminal ${newId + 1}`;
+
+                        tabs.value.forEach(tab => tab.active = false);
+                        tabs.value.push({
+                            id: newId,
+                            name: tabName,
+                            active: true
+                        });
+
+                        // 初始化聊天消息
+                        chatMessages[newId] = [];
+
+                        // 在下一个tick创建终端（等待DOM渲染）
+                        nextTick(() => {
+                            createTerminal(newId);
+                        });
+                    };
+
+                    // 切换标签
+                    const switchTab = (tabId) => {
+                        tabs.value.forEach(tab => {
+                            tab.active = tab.id === tabId;
+                        });
+
+                        // 重新调整终端大小
+                        nextTick(() => {
+                            const term = terminals[tabId];
+                            if (term && term.fitAddon) {
+                                setTimeout(() => {
+                                    term.fitAddon.fit();
+                                }, 50);
+                            }
+                        });
+                    };
+
+                    // 关闭标签
+                    const closeTab = (tabId, event) => {
+                        event.stopPropagation();
+
+                        if (tabs.value.length <= 1) {
+                            ElMessage.warning('至少保留一个终端标签');
+                            return;
+                        }
+
+                        // 关闭socket连接
+                        if (terminals[tabId] && terminals[tabId].socket) {
+                            terminals[tabId].socket.disconnect();
+                        }
+
+                        // 销毁终端
+                        if (terminals[tabId] && terminals[tabId].term) {
+                            terminals[tabId].term.dispose();
+                            delete terminals[tabId];
+                        }
+
+                        // 删除聊天记录
+                        delete chatMessages[tabId];
+
+                        // 移除标签
+                        const index = tabs.value.findIndex(t => t.id === tabId);
+                        tabs.value.splice(index, 1);
+
+                        // 如果关闭的是当前活动标签，切换到第一个标签
+                        if (tabId === activeTabId.value) {
+                            tabs.value[0].active = true;
+                        }
+                    };
+
+                    // 创建终端实例
+                    const createTerminal = (id) => {
+                        const termEl = document.getElementById(`terminal-${id}`);
+                        if (!termEl) return;
+
+                        // 创建终端
+                        const term = new Terminal({
+                            cursorBlink: true,
+                            disableStdin: false,
+                            theme: {
+                                background: '#fffff0',
+                                foreground: '#000000',
+                                cursor: '#000000',
+                                selection: 'rgba(0, 100, 200, 0.3)'
+                            }
+                        });
+
+                        term.open(termEl);
+
+                        // 添加fit插件
+                        const fitAddon = new FitAddon.FitAddon();
+                        term.loadAddon(fitAddon);
+
+                        // 连接Socket
+                        const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+                        // 处理终端输出
+                        socket.on('terminal_output', (msg) => {
+                            term.write(msg.data);
+                        });
+
+                        // 处理聊天输出
+                        socket.on('chat_out', (data) => {
+                            addChatMessage(id, 'bot', data.message);
+                        });
+
+                        // 处理命令执行
+                        socket.on('cmd_exe', (data) => {
+                            if (data.cmd) {
+                                term.paste(data.cmd + '\n');
+                                setTimeout(() => sendCmdResult(id), 1000);
+                            }
+                            if (data.request === 'getTermContent') {
+                                const content = getTerminalContent(id);
+                                socket.emit('cmd_res', { terminal_content: content });
+                            }
+                        });
+
+                        // 终端输入
+                        term.onData((input) => {
+                            socket.emit('terminal_input', { input });
+                        });
+
+                        // 调整大小
+                        const resizeObserver = new ResizeObserver(() => {
+                            fitAddon.fit();
+                            const dims = fitAddon.proposeDimensions();
+                            if (dims) {
+                                socket.emit('terminal_resize', {
+                                    rows: dims.rows,
+                                    cols: dims.cols
+                                });
+                            }
+                        });
+
+                        resizeObserver.observe(termEl);
+
+                        // 保存终端实例
+                        terminals[id] = {
+                            term,
+                            socket,
+                            fitAddon,
+                            resizeObserver
+                        };
+
+                        // 初始调整大小
+                        setTimeout(() => {
+                            fitAddon.fit();
+                            const dims = fitAddon.proposeDimensions();
+                            if (dims) {
+                                socket.emit('terminal_resize', {
+                                    rows: dims.rows,
+                                    cols: dims.cols
+                                });
+                            }
+                        }, 100);
+                    };
+
+                    // 获取终端内容
+                    const getTerminalContent = (id) => {
+                        const term = terminals[id]?.term;
+                        if (!term) return '';
+
+                        const buffer = term.buffer.active;
+                        let content = '';
+
+                        for (let i = 0; i < buffer.length; i++) {
+                            const line = buffer.getLine(i);
+                            if (line) {
+                                content += line.translateToString(true) + '\n';
+                            }
+                        }
+
+                        return content;
+                    };
+
+                    // 发送命令结果
+                    const sendCmdResult = (id) => {
+                        const socket = terminals[id]?.socket;
+                        if (!socket) return;
+
+                        setTimeout(() => {
+                            const content = getTerminalContent(id);
+                            socket.emit('cmd_res', { cmd_res: content });
+                        }, 1000);
+                    };
+
+                    // 添加聊天消息
+                    const addChatMessage = (id, type, text) => {
+                        if (!chatMessages[id]) {
+                            chatMessages[id] = [];
+                        }
+
+                        chatMessages[id].push({
+                            type,
+                            text,
+                            time: new Date().toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            })
+                        });
+
+                        // 滚动到底部
+                        nextTick(() => {
+                            const chatEl = document.getElementById(`chat-messages-${id}`);
+                            if (chatEl) {
+                                chatEl.scrollTop = chatEl.scrollHeight;
+                            }
+                        });
+                    };
+
+                    // 发送聊天消息
+                    const sendChatMessage = (id) => {
+                        const inputEl = document.getElementById(`chat-input-${id}`);
+                        if (!inputEl) return;
+
+                        const text = inputEl.value.trim();
+                        if (!text) return;
+
+                        // 发送到服务器
+                        const socket = terminals[id]?.socket;
+                        if (socket) {
+                            socket.emit('chat_in', { message: text });
+                        }
+
+                        // 添加到聊天记录
+                        addChatMessage(id, 'user', text);
+
+                        // 清空输入框
+                        inputEl.value = '';
+                        inputEl.style.height = 'auto';
+                        inputEl.focus();
+                    };
+
+                    // 处理输入框回车
+                    const handleInputKeydown = (event, id) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            sendChatMessage(id);
+                        }
+                    };
+
+                    // 自动调整输入框高度
+                    const adjustTextareaHeight = (event) => {
+                        event.target.style.height = 'auto';
+                        event.target.style.height = Math.min(event.target.scrollHeight, 120) + 'px';
+                    };
+
+                    // 初始化
+                    onMounted(() => {
+                        // 初始化第一个终端的聊天记录
+                        chatMessages[0] = [];
+
+                        // 创建第一个终端
+                        nextTick(() => {
+                            createTerminal(0);
+                        });
+                    });
+
+                    // 清理
+                    onUnmounted(() => {
+                        // 断开所有socket连接
+                        Object.values(terminals).forEach(terminal => {
+                            if (terminal.socket) {
+                                terminal.socket.disconnect();
+                            }
+                            if (terminal.resizeObserver) {
+                                terminal.resizeObserver.disconnect();
+                            }
+                            if (terminal.term) {
+                                terminal.term.dispose();
+                            }
+                        });
+                    });
+
+                    return {
+                        tabs,
+                        panels,
+                        chatMessages,
+                        activeTabId,
+                        addTab,
+                        switchTab,
+                        closeTab,
+                        sendChatMessage,
+                        handleInputKeydown,
+                        adjustTextareaHeight
+                    };
+                },
+
+                template: `
+                <div id="app">
+                    <!-- 标签栏 -->
+                    <div class="tab-bar">
+                        <div 
+                            v-for="tab in tabs" 
+                            :key="tab.id"
+                            class="tab-item"
+                            :class="{ active: tab.active }"
+                            @click="switchTab(tab.id)"
+                        >
+                            {{ tab.name }}
+                            <span 
+                                class="close-btn"
+                                @click="closeTab(tab.id, $event)"
+                            >
+                                ×
+                            </span>
+                        </div>
+                        <div class="add-tab-btn" @click="addTab">
+                            +
+                        </div>
+                    </div>
+                    
+                    <!-- 面板容器 -->
+                    <div class="panel-container">
+                        <div 
+                            v-for="tab in tabs" 
+                            :key="tab.id"
+                            class="panel"
+                            :class="{ active: tab.active }"
+                        >
+                            <!-- 终端区域 -->
+                            <div class="terminal-area">
+                                <div class="terminal-wrapper">
+                                    <div :id="'terminal-' + tab.id"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- 聊天区域 -->
+                            <div class="chat-area">
+                                <div class="chat-header">
+                                    聊天助手
+                                </div>
+                                
+                                <div 
+                                    class="chat-messages"
+                                    :id="'chat-messages-' + tab.id"
+                                >
+                                    <div 
+                                        v-for="(msg, index) in chatMessages[tab.id]"
+                                        :key="index"
+                                        class="message-item"
+                                        :class="'message-' + msg.type"
+                                    >
+                                        <div class="message-bubble">
+                                            {{ msg.text }}
+                                        </div>
+                                        <div class="message-time">
+                                            {{ msg.time }}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="chat-input-area">
+                                    <div class="chat-input-wrapper">
+                                        <textarea
+                                            :id="'chat-input-' + tab.id"
+                                            class="chat-textarea"
+                                            rows="1"
+                                            placeholder="输入消息... (Enter发送, Shift+Enter换行)"
+                                            @keydown="handleInputKeydown($event, tab.id)"
+                                            @input="adjustTextareaHeight"
+                                        ></textarea>
+                                        <button 
+                                            class="send-btn"
+                                            @click="sendChatMessage(tab.id)"
+                                        >
+                                            发送
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+            });
+
+            // 挂载应用
+            app.mount('#app');
+        </script>
+    </body>
+
+</html>

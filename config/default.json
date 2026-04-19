@@ -1,0 +1,50 @@
+{
+  "agent": {
+    "max_iterations": 20,
+    "enable_memory": true,
+    "enable_memory_injection": false,
+    "memory_injection": {
+      "max_results": 3,
+      "similarity_threshold": 0.3,
+      "max_length": 2000
+    }
+  },
+  "llm": {
+    "provider": "${LLM_PROVIDER}",
+    "api_key": "${LLM_API_KEY}",
+    "base_url": "${LLM_BASE_URL}",
+    "model": "${LLM_MODEL}",
+    "temperature": 0.7
+  },
+  "terminal": {
+    "shell": "/bin/bash",
+    "default_cols": 80,
+    "default_rows": 24
+  },
+  "memory": {
+    "database_path": "~/.termbot/memory/termbot.db",
+    "vector_db_path": "~/.termbot/memory/faiss",
+    "whoosh_index_dir": "~/.termbot/memory/whoosh_index",
+    "checkpoint_dir": "~/.termbot/memory/checkpoints",
+    "threshold": 0.8
+  },
+  "embedding": {
+    "provider": "dashscope",
+    "api_key": "${EMBEDDING_API_KEY}",
+    "model": "text-embedding-v4",
+    "dimensions": 1024
+  },
+  "rerank": {
+    "provider": "dashscope",
+    "api_key": "${RERANK_API_KEY}",
+    "model": "qwen3-rerank"
+  },
+  "conversations": {
+    "enabled": true,
+    "base_dir": "~/.termbot/conversations"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/termbot.log"
+  }
+}

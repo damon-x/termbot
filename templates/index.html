@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>Web Terminal (xterm.js + Flask)</title>
+        <!-- <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/xterm/5.5.0/xterm.min.css"> -->
+        <link rel="stylesheet" href="/static/xterm.min.css">
+        <style>
+            html,
+            body {
+                height: 100%;
+                margin: 0;
+            }
+
+            /* 页面主容器：左右布局 */
+            #app-container {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+                width: 100%;
+                height: 100vh;
+                background: #ffffff;
+            }
+
+            /* 左侧终端：占 70% */
+            #terminal {
+                width: 70%;
+                height: 100vh;
+                box-sizing: border-box;
+                border-right: 1px solid #e5e5e5;
+                background: #ffffff;
+            }
+
+
+            /* 右侧聊天面板：占 30% */
+            #chat-panel {
+                width: 30%;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                background: #ffffff;
+            }
+
+            .chat-header {
+                padding: 12px 16px;
+                border-bottom: 1px solid #e5e5e5;
+                font-size: 16px;
+                font-weight: 600;
+                color: #111111;
+                background: #ffffff;
+            }
+
+            .chat-messages {
+                flex: 1 1 auto;
+                overflow-y: auto;
+                padding: 12px 16px;
+                background: #ffffff;
+            }
+
+            .message {
+                margin-bottom: 10px;
+                line-height: 1.5;
+                color: #111111;
+            }
+
+            .message .bubble {
+                display: inline-block;
+                padding: 8px 12px;
+                border-radius: 8px;
+                background: #f7f7f7;
+                color: #111111;
+                max-width: 90%;
+                word-break: break-word;
+            }
+
+            .chat-input {
+                flex: 0 0 auto;
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                padding: 12px 16px;
+                border-top: 1px solid #e5e5e5;
+                background: #ffffff;
+            }
+
+            .chat-input input[type="text"] {
+                flex: 1 1 auto;
+                height: 36px;
+                padding: 0 10px;
+                border: 1px solid #dddddd;
+                border-radius: 6px;
+                outline: none;
+                background: #ffffff;
+                color: #111111;
+            }
+
+            .chat-input button {
+                height: 36px;
+                padding: 0 14px;
+                border: 1px solid #dddddd;
+                border-radius: 6px;
+                background: #ffffff;
+                color: #111111;
+                cursor: pointer;
+            }
+
+            .chat-input button:hover {
+                background: #f7f7f7;
+            }
+
+
+            #chat-messages {
+                white-space: pre-wrap;
+                /* 保留换行和空格 */
+                word-wrap: break-word;
+                /* 长单词自动换行 */
+                overflow-wrap: anywhere;
+                /* 更智能的断词 */
+            }
+
+            /* 消息气泡样式调整 */
+            .message .bubble {
+                white-space: pre-wrap;
+                /* 确保消息内容换行 */
+                line-height: 1.4;
+                /* 增加行高提升可读性 */
+                padding: 10px 14px;
+                /* 更大的内边距 */
+            }
+
+            /* 聊天输入区域整体样式 */
+            .chat-input {
+                padding: 16px;
+                background: #f9f9f9;
+                /* 浅灰色背景 */
+                border-top: 1px solid #e0e0e0;
+            }
+
+            /* 文本输入框样式 */
+            #chat-input {
+                flex: 1;
+                min-height: 40px;
+                /* 最小高度 */
+                max-height: 120px;
+                /* 最大高度（滚动前） */
+                padding: 8px 12px;
+                border: 1px solid #d1d1d1;
+                border-radius: 8px;
+                font-size: 14px;
+                resize: none;
+                /* 禁止手动调整大小 */
+                outline: none;
+                transition: border-color 0.2s;
+                background: #fff;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+            }
+
+            #chat-input:focus {
+                border-color: #4a90e2;
+                box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+            }
+
+            /* 发送按钮样式 */
+            #chat-send {
+                min-width: 60px;
+                height: 40px;
+                padding: 0 12px;
+                background: #4a90e2;
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            #chat-send:hover {
+                background: #3a7bc8;
+            }
+
+            #chat-send:active {
+                transform: scale(0.98);
+            }
+
+            /* 输入框自动高度调整 */
+            #chat-input {
+                overflow-y: hidden;
+                /* 隐藏滚动条直到需要时 */
+            }
+
+            /* 修复层级结构（关键调整） */
+            .xterm .xterm-screen {
+                position: relative;
+                z-index: 0;
+            }
+
+            .xterm .xterm-selection {
+                z-index: 1 !important;
+                /* 选择层在文本层下方 */
+            }
+
+            .xterm .xterm-text-layer {
+                z-index: 2 !important;
+                /* 文本层在中间 */
+                pointer-events: none;
+            }
+
+            /* 新增光标层专用设置 */
+            .xterm .xterm-cursor-layer {
+                z-index: 3 !important;
+                /* 光标必须在最顶层 */
+            }
+
+            /* 强制文本背景透明 */
+            .xterm .xterm-rows>div>span {
+                background-color: transparent !important;
+            }
+
+            /* 优化选择高亮 */
+            .xterm .xterm-selection div {
+                background-color: rgba(51, 153, 255, 0.6) !important;
+                /* 移除影响光标的属性 */
+                opacity: 1 !important;
+                box-shadow: none;
+                /* 移除阴影避免覆盖 */
+            }
+
+            /* 确保光标可见性 */
+            .xterm .xterm-cursor {
+                z-index: 4 !important;
+                /* 最高优先级 */
+                border-left: 2px solid #000000 !important;
+                /* 红色光标示例 */
+                animation: blink 1s infinite;
+                /* 可选：添加闪烁动画 */
+            }
+
+            @keyframes blink {
+
+                0%,
+                49% {
+                    opacity: 1;
+                }
+
+                50%,
+                100% {
+                    opacity: 0;
+                }
+            }
+        </style>
+        <!-- <script src="https://cdn.bootcdn.net/ajax/libs/xterm/5.5.0/xterm.js"></script> -->
+        <!-- <script src="https://cdn.bootcdn.net/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script> -->
+        <script src="/static/xterm.js"></script>
+        <script src="/static/socket.io.min.js"></script>
+        <!-- Fit 插件（推荐使用，与 xterm 5.x 匹配的 0.8.x 版本）。可用本地或 CDN。 -->
+        <script src="/static/xterm-addon-fit.js"></script>
+    </head>
+
+    <body>
+        <div id="app-container">
+            <div id="terminal"></div>
+            <aside id="chat-panel">
+                <div class="chat-header">lt</div>
+                <div id="chat-messages" class="chat-messages"></div>
+                <div class="chat-input">
+                    <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+                    <button id="chat-send">send</button>
+                </div>
+            </aside>
+        </div>
+
+        <script>
+            var termLine = 0
+            // 初始化 xterm.js  终端实例 
+            const term = new Terminal({
+                cursorBlink: true,  // 光标闪烁 
+                disableStdin: false,  // 允许键盘输入
+                enableMouseEvents: true,  // 启用鼠标事件（选择文字）
+                theme: {
+                    background: '#fffff0',  // 白色背景 
+                    foreground: '#000000',  // 黑色文字 
+                    cursor: '#000000', // 可选：调整光标颜色（默认白色可能看不清，设为黑色） 
+                    cursorAccent: '#ffff00',
+                    selection: '#ff0000'  // 选择文字的背景色（半透明蓝色）
+                }
+            });
+
+            // 将终端附加到页面 DOM 元素 
+            term.open(document.getElementById('terminal'));
+
+            // 连接 Flask WebSocket（使用 socket.io  客户端，自动与后端 socketio 通信） 
+            const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+            // 监听终端输入：用户在终端中输入的内容发送到后端 
+            term.onData(input => {
+                socket.emit('terminal_input', { input: input });
+            });
+
+            // 监听后端发送的终端输出：将内容显示到终端 
+            socket.on('terminal_output', function (message) {
+                term.write(message.data);
+            });
+
+            // 窗口大小变化时调整终端尺寸 
+            // window.addEventListener('resize',  () => { 
+            //     term.fit();   // 需要 xterm-addon-fit 插件，此处简化未引入，可手动设置尺寸 
+            // }); 
+
+            // term.resize(80, 40);
+
+            const container = document.getElementById('terminal');
+
+            // 最推荐：优先使用 FitAddon，自适应并同步整数 rows/cols；无插件则回退手动测量
+            let fitAddon = null;
+            if (window.FitAddon && typeof window.FitAddon.FitAddon === 'function') {
+                fitAddon = new window.FitAddon.FitAddon();
+                term.loadAddon(fitAddon);
+            }
+
+            const computeCellSize = () => {
+                const core = term._core;
+                const dims = core?._renderService?._renderer?._dimensions;
+                return {
+                    cw: Math.max(1, Math.floor(dims?.cell.width || 9)),
+                    ch: Math.max(1, Math.floor(dims?.cell.height || 18)),
+                };
+            };
+
+            const applyFitAndResize = () => {
+                let rows = null, cols = null;
+                if (fitAddon) {
+                    try { fitAddon.fit(); } catch (_) { }
+                    if (typeof fitAddon.proposeDimensions === 'function') {
+                        const d = fitAddon.proposeDimensions();
+                        if (d) {
+                            rows = Math.max(1, Math.floor(d.rows));
+                            cols = Math.max(1, Math.floor(d.cols));
+                        }
+                    }
+                }
+                if (!rows || !cols) {
+                    // 回退：手动计算
+                    const { cw, ch } = computeCellSize();
+                    const w = container.clientWidth;
+                    const h = container.clientHeight;
+                    cols = Math.max(1, Math.floor(w / cw));
+                    rows = Math.max(1, Math.floor(h / ch));
+                }
+                // 本地 resize（顺序：cols, rows）
+                term.resize(cols, rows);
+                console.log("cols " + cols + " rows " + rows)
+                // 同步给后端（若你的后端支持尺寸调整）
+                try { socket.emit('terminal_resize', { rows, cols }); } catch (_) { }
+            };
+
+            // 初次适配
+            applyFitAndResize();
+
+            // 容器尺寸变化监听（优先）
+            try {
+                const ro = new ResizeObserver(() => applyFitAndResize());
+                ro.observe(container);
+            } catch (_) {
+                // 回退为窗口尺寸监听
+                window.addEventListener('resize', applyFitAndResize);
+            }
+
+            // 简单聊天逻辑（本地显示，未对接后端）
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-input');
+            const chatSend = document.getElementById('chat-send');
+
+            const appendMessage = (text) => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'message';
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                bubble.textContent = text.trim();
+                wrapper.appendChild(bubble);
+                chatMessages.appendChild(wrapper);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            };
+
+            // const sendMessage = () => {
+            //     const text = chatInput.value || '';
+            //     if (!text.trim()) return;
+            //     appendMessage(text);
+            //     chatInput.value = '';
+            //     chatInput.focus();
+            // };
+            // Replace the existing sendMessage function with this updated version
+            const sendMessage = () => {
+                const text = chatInput.value || '';
+                if (!text.trim()) return;
+                socket.emit('chat_in', { message: text });
+                appendMessage(text);
+                chatInput.value = '';
+                chatInput.focus();
+                // cmd = eval(`'${text}'`)
+                // socket.emit('terminal_input', { input: cmd });
+
+            };
+
+            // Add this socket event listener for receiving chat messages from backend
+            socket.on('chat_out', function (data) {
+                // For debugging: display backend response
+                appendMessage('🤖️: ' + data.message);
+            });
+
+            socket.on('cmd_exe', function (data) {
+                if (data.cmd) {
+                    term.paste(data.cmd + '\n');
+                    sendCmdRes();
+                } else if (data.request) {
+                    if (data.request == "getTermContent") {
+                        let allText = getContent();
+                        socket.emit('cmd_res', { terminal_content: allText });
+                    }
+                }
+            });
+
+
+            chatSend.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!e.isComposing) { // 避免输入法选词时误触发 
+                        sendMessage();
+                    }
+                }
+                console.log("key " + e.key);
+            });
+
+
+            const getContent = () => {
+                const buffer = term.buffer.active;
+                const total = buffer.length;           // 缓冲总行数
+                const top = buffer.viewportY;          // 视口顶部在缓冲区的起始行
+                const visibleRows = term.rows;         // 视口行数
+                const start = top;
+                const end = Math.min(top + visibleRows, total);
+
+                console.log("total " + total + "start" + start + "end " + end + " visibleRows " + visibleRows);
+
+                // 获取当前可见区域文本
+                let visibleText = '';
+                for (let i = start; i < end; i++) {
+                    const line = buffer.getLine(i);
+                    if (!line) continue;
+                    // translateToString(true) 保留空格（参数在不同版本可能略有差异）
+                    visibleText += line.translateToString(true) + '\n';
+                    // console.log("line" + line.translateToString(true));
+                }
+                // console.log("visibleText :\n" + visibleText);
+
+                // 获取全部缓冲内容
+                let allText = '';
+                for (let i = 0; i < total; i++) {
+                    const line = buffer.getLine(i);
+                    if (!line) continue;
+                    allText += line.translateToString(true) + '\n';
+                }
+                // console.log("allText :\n" + allText);
+                return allText;
+            }
+
+            // setTimeout(() => {
+            //     term.paste('\nls\n');
+            // }, 500);
+
+            // setInterval(() => {
+            //     getContent();
+            // }, 3000);
+
+            const sendCmdRes = () => {
+                setTimeout(() => {
+                    content = getContent();
+                    socket.emit('cmd_res', { cmd_res: content });
+                }, 1000);
+            }
+
+            const sendContentExtend = () => {
+                const buffer = term.buffer.active;
+                const total = buffer.length;           // 缓冲总行数
+                const top = buffer.viewportY;          // 视口顶部在缓冲区的起始行
+                const visibleRows = term.rows;         // 视口行数
+                const start = top;
+                const end = Math.min(top + visibleRows, total);
+
+                console.log("total " + total + "start" + start + "end " + end + " visibleRows " + visibleRows + " termLine " + termLine);
+
+                let realTotal = 0;
+                for (let i = total - 1; i--; i >= 0) {
+                    const line = buffer.getLine(i);
+                    if (!line || "" == line.translateToString(true)) continue;
+                    realTotal = i;
+                    break;
+                }
+
+                if (realTotal == termLine) {
+                    return;
+                }
+
+                let newLines = '';
+                for (let i = termLine; i <= realTotal; i++) {
+                    termLine++
+                    const line = buffer.getLine(i);
+                    if (!line || "" == line.translateToString(true)) continue;
+                    newLines += line.translateToString(true) + '\n';
+                }
+                if (newLines != "") {
+                    // socket.emit('terminal_content', { message: newLines });
+                    console.log(newLines);
+                }
+                return;
+            }
+
+            // setInterval(() => {
+            //     let allText = getContent();
+            //     socket.emit('terminal_content', { message: allText });
+            // }, 3000);
+
+
+
+        </script>
+    </body>
+
+</html>

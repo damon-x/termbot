@@ -1,0 +1,153 @@
+<!-- Frontend adaptation for ask_user question handling -->
+
+<!-- 1. Modify chat_out event handler (around line 508) -->
+<!-- BEFORE: -->
+socket.on('chat_out', (data) => {
+    addChatMessage(id, 'bot', data.message);
+});
+
+<!-- AFTER: -->
+socket.on('chat_out', (data) => {
+    if (data.type === 'question') {
+        // Handle question type with options
+        addQuestionMessage(id, data.question, data.options || [], data.message);
+    } else {
+        // Normal response
+        addChatMessage(id, 'bot', data.message);
+    }
+});
+
+<!-- 2. Add new message type for questions (after addChatMessage function, around line 616) -->
+const addQuestionMessage = (id, question, options, fallbackText) => {
+    if (!chatMessages[id]) {
+        chatMessages[id] = [];
+    }
+
+    chatMessages[id].push({
+        type: 'question',
+        question,
+        options,
+        text: fallbackText,
+        time: new Date().toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    });
+
+    nextTick(() => {
+        const chatEl = document.getElementById(`chat-messages-${id}`);
+        if (chatEl) {
+            chatEl.scrollTop = chatEl.scrollHeight;
+        }
+    });
+};
+
+<!-- 3. Update message rendering template (around line 748) -->
+<!-- BEFORE: -->
+<div v-for="(msg, index) in chatMessages[tab.id]"
+     :key="index"
+     class="message-item"
+     :class="'message-' + msg.type">
+    <div class="message-bubble">
+        {{ msg.text }}
+    </div>
+    <div class="message-time">{{ msg.time }}</div>
+</div>
+
+<!-- AFTER: -->
+<div v-for="(msg, index) in chatMessages[tab.id]"
+     :key="index"
+     class="message-item"
+     :class="'message-' + (msg.type === 'question' ? 'question' : msg.type)">
+
+    <!-- Question type with options -->
+    <template v-if="msg.type === 'question'">
+        <div class="message-bubble message-question">
+            <div class="question-icon">❓</div>
+            <div class="question-text">{{ msg.question }}</div>
+            <div v-if="msg.options && msg.options.length" class="question-options">
+                <button
+                    v-for="option in msg.options"
+                    :key="option"
+                    class="option-button"
+                    @click="sendOption(tab.id, option)">
+                    {{ option }}
+                </button>
+            </div>
+            <div v-if="!msg.options || !msg.options.length" class="question-fallback">
+                {{ msg.text }}
+            </div>
+        </div>
+        <div class="message-time">{{ msg.time }}</div>
+    </template>
+
+    <!-- Normal bot/user message -->
+    <template v-else>
+        <div class="message-bubble">
+            {{ msg.text }}
+        </div>
+        <div class="message-time">{{ msg.time }}</div>
+    </template>
+</div>
+
+<!-- 4. Add sendOption function (in the Vue app methods, around line 370) -->
+const sendOption = (tabId, option) => {
+    const socket = terminals[tabId]?.socket;
+    if (socket) {
+        socket.emit('chat_in', { message: option });
+    }
+};
+
+<!-- 5. Add CSS for question messages (in <style> section, around line 177) -->
+<style>
+/* Add these styles */
+
+.message-question {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border-left: 4px solid #2196f3;
+}
+
+.question-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+}
+
+.question-text {
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1565c0;
+}
+
+.question-options {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.option-button {
+    padding: 6px 16px;
+    background: white;
+    border: 2px solid #2196f3;
+    border-radius: 16px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.option-button:hover {
+    background: #2196f3;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(33, 150, 243, 0.3);
+}
+
+.option-button:active {
+    transform: translateY(0);
+}
+
+.question-fallback {
+    margin-top: 8px;
+    opacity: 0.8;
+}
+</style>

@@ -1,0 +1,2428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>terminal</title>
+
+        <!-- Vue 3 CDN -->
+        <script src="/static/vue.global.js"></script>
+
+        <!-- Element Plus CDN -->
+        <link rel="stylesheet" href="/static/index.css">
+        <script src="/static/index.full.js"></script>
+
+        <!-- xterm.js 本地资源 -->
+        <link rel="stylesheet" href="/static/xterm.min.css">
+        <script src="/static/xterm.js"></script>
+        <script src="/static/xterm-addon-fit.js"></script>
+
+        <!-- Socket.io -->
+        <script src="/static/socket.io.min.js"></script>
+
+        <!-- Markdown 渲染 (marked.js) -->
+        <script src="/static/marked.min.js"></script>
+        <!-- 代码高亮 (highlight.js) -->
+        <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+        <script src="https://cdn.bootcdn.net/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            #app {
+                width: 100vw;
+                height: 100vh;
+                display: flex;
+                flex-direction: row;
+                background: #f5f7fa;
+            }
+
+            /* ===== Agent Sidebar ===== */
+            .agent-sidebar {
+                width: 10%;
+                min-width: 100px;
+                max-width: 160px;
+                height: 100%;
+                background: #2c2f3a;
+                display: flex;
+                flex-direction: column;
+                flex-shrink: 0;
+                border-right: 1px solid #1a1c25;
+            }
+
+            .agent-sidebar-title {
+                height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                font-weight: 600;
+                color: #7c8190;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                border-bottom: 1px solid #3a3d4a;
+                flex-shrink: 0;
+            }
+
+            .agent-list {
+                flex: 1;
+                overflow-y: auto;
+                padding: 6px 0;
+            }
+
+            .agent-item {
+                padding: 8px 10px;
+                margin: 2px 6px;
+                border-radius: 6px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 13px;
+                color: #a0a4b0;
+                transition: background 0.2s, color 0.2s;
+                word-break: break-all;
+                line-height: 1.3;
+            }
+
+            .agent-item:hover {
+                background: #3a3d4a;
+                color: #d0d4e0;
+            }
+
+            .agent-item.active {
+                background: #409eff;
+                color: #ffffff;
+            }
+
+            .agent-item .agent-detail-btn {
+                flex-shrink: 0;
+                width: 20px;
+                height: 20px;
+                margin-left: 4px;
+                font-size: 14px;
+                line-height: 20px;
+                text-align: center;
+                border-radius: 4px;
+                opacity: 0;
+                cursor: pointer;
+                transition: opacity 0.15s, background 0.15s;
+            }
+
+            .agent-item:hover .agent-detail-btn {
+                opacity: 1;
+            }
+
+            .agent-item.active .agent-detail-btn {
+                color: rgba(255,255,255,0.8);
+            }
+
+            .agent-item.active .agent-detail-btn:hover {
+                background: rgba(255,255,255,0.2);
+                color: #fff;
+            }
+
+            .agent-item:not(.active) .agent-detail-btn:hover {
+                background: #4a4d5a;
+                color: #d0d4e0;
+            }
+
+            .add-agent-btn {
+                margin: 6px;
+                padding: 8px;
+                border: 1px dashed #4a4d5a;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 12px;
+                color: #7c8190;
+                text-align: center;
+                transition: all 0.2s;
+                flex-shrink: 0;
+            }
+
+            .add-agent-btn:hover {
+                border-color: #409eff;
+                color: #409eff;
+            }
+
+            /* ===== Main Area ===== */
+            .main-area {
+                flex: 1;
+                min-width: 0;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+            }
+
+            .tab-bar {
+                height: 40px;
+                background: #fff;
+                border-bottom: 1px solid #dcdfe6;
+                display: flex;
+                align-items: center;
+                padding: 0 10px;
+                flex-shrink: 0;
+            }
+
+            .tab-item {
+                height: 32px;
+                padding: 0 15px;
+                margin-right: 4px;
+                background: #f0f2f5;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.3s;
+            }
+
+            .tab-item.active {
+                background: #409eff;
+                color: white;
+                border-color: #409eff;
+            }
+
+            .tab-item .close-btn {
+                margin-left: 8px;
+                width: 16px;
+                height: 16px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                transition: background 0.3s;
+            }
+
+            .tab-item .tab-name-input {
+                border: none;
+                background: transparent;
+                outline: none;
+                font-size: 13px;
+                font-family: inherit;
+                width: 100px;
+                padding: 2px 4px;
+                border-radius: 2px;
+            }
+
+            .tab-item.active .tab-name-input {
+                color: white;
+            }
+
+            .tab-item:not(.active) .tab-name-input {
+                color: #303133;
+                background: #fff;
+            }
+
+            .tab-item .tab-name-input:focus {
+                background: rgba(255, 255, 255, 0.2);
+            }
+
+            .tab-item.active .close-btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+            }
+
+            .tab-item:not(.active) .close-btn:hover {
+                background: #dcdfe6;
+            }
+
+            .add-tab-btn {
+                width: 32px;
+                height: 32px;
+                border: 1px dashed #dcdfe6;
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                font-size: 18px;
+                color: #909399;
+                margin-left: 4px;
+                transition: all 0.3s;
+            }
+
+            .add-tab-btn:hover {
+                border-color: #409eff;
+                color: #409eff;
+            }
+
+            .panel-container {
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .panel {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.3s;
+            }
+
+            .panel.active {
+                opacity: 1;
+                pointer-events: all;
+            }
+
+            /* Chat on left, terminal on right */
+            .chat-area {
+                flex-shrink: 0;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                background: white;
+            }
+
+            .panel-divider {
+                width: 5px;
+                height: 100%;
+                background: #dcdfe6;
+                cursor: col-resize;
+                flex-shrink: 0;
+                transition: background 0.15s;
+                z-index: 10;
+            }
+
+            .panel-divider:hover,
+            .panel-divider.dragging {
+                background: #409eff;
+            }
+
+            .terminal-area {
+                flex: 1;
+                min-width: 0;
+                height: 100%;
+                background: #fffff0;
+                padding: 10px;
+            }
+
+            .terminal-wrapper {
+                width: 100%;
+                height: 100%;
+                background: #fffff0;
+                border-radius: 4px;
+                overflow: hidden;
+                position: relative;
+            }
+
+            [id^="terminal-"] {
+                width: 100%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+            }
+
+            .chat-header {
+                height: 50px;
+                padding: 0 20px;
+                border-bottom: 1px solid #dcdfe6;
+                display: flex;
+                align-items: center;
+                font-weight: 600;
+                font-size: 16px;
+                color: #303133;
+                flex-shrink: 0;
+            }
+
+            .chat-messages {
+                flex: 1;
+                padding: 15px;
+                overflow-y: auto;
+                background: white;
+            }
+
+            .message-item {
+                margin-bottom: 12px;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .message-bubble {
+                display: inline-block;
+                max-width: 85%;
+                padding: 10px 14px;
+                border-radius: 8px;
+                line-height: 1.5;
+                word-break: break-word;
+            }
+
+            .message-user {
+                align-items: flex-end;
+            }
+
+            .message-user .message-bubble {
+                background: #409eff;
+                color: white;
+                border-bottom-right-radius: 2px;
+                white-space: pre-wrap;
+            }
+
+            .message-bot {
+                align-items: flex-start;
+            }
+
+            .message-bot .message-bubble {
+                background: #f0f2f5;
+                color: #303133;
+                border-bottom-left-radius: 2px;
+            }
+
+            /* Markdown 内容样式 */
+            .message-bot .message-bubble p { margin: 0 0 6px; }
+            .message-bot .message-bubble p:last-child { margin-bottom: 0; }
+            .message-bot .message-bubble h1,
+            .message-bot .message-bubble h2,
+            .message-bot .message-bubble h3,
+            .message-bot .message-bubble h4,
+            .message-bot .message-bubble h5,
+            .message-bot .message-bubble h6 { margin: 8px 0 4px; line-height: 1.4; }
+            .message-bot .message-bubble h1:first-child,
+            .message-bot .message-bubble h2:first-child,
+            .message-bot .message-bubble h3:first-child { margin-top: 0; }
+            .message-bot .message-bubble ul,
+            .message-bot .message-bubble ol { padding-left: 20px; margin: 0 0 6px; }
+            .message-bot .message-bubble li { margin-bottom: 2px; }
+            .message-bot .message-bubble li:last-child { margin-bottom: 0; }
+            .message-bot .message-bubble table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+            .message-bot .message-bubble th,
+            .message-bot .message-bubble td { border: 1px solid #d0d3d9; padding: 5px 10px; }
+            .message-bot .message-bubble thead th { background: #e8eaed; font-weight: 600; }
+            .message-bot .message-bubble code { background: #e8eaed; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+            .message-bot .message-bubble pre { background: #282c34; color: #abb2bf; padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+            .message-bot .message-bubble pre code { background: none; padding: 0; font-size: 0.85em; }
+
+            .message-time {
+                font-size: 12px;
+                color: #909399;
+                margin-top: 4px;
+            }
+
+            .chat-input-area {
+                padding: 15px;
+                border-top: 1px solid #dcdfe6;
+                background: white;
+                flex-shrink: 0;
+            }
+
+            .chat-input-wrapper {
+                display: flex;
+                gap: 10px;
+            }
+
+            .chat-textarea {
+                flex: 1;
+                min-height: 40px;
+                max-height: 120px;
+                padding: 8px 12px;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                resize: none;
+                font-family: inherit;
+                font-size: 14px;
+                line-height: 1.5;
+                transition: border-color 0.3s;
+            }
+
+            .chat-textarea:focus {
+                outline: none;
+                border-color: #409eff;
+            }
+
+            .send-btn {
+                height: 40px;
+                padding: 0 20px;
+                background: #409eff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: background 0.3s;
+                flex-shrink: 0;
+            }
+
+            .send-btn:hover {
+                background: #79bbff;
+            }
+
+            .send-btn:active {
+                background: #337ecc;
+            }
+
+            /* xterm基础修复 */
+            .xterm .xterm-screen {
+                position: relative;
+            }
+
+            /* 选择层在最底层 */
+            .xterm .xterm-selection {
+                z-index: 1;
+                background-color: rgba(51, 153, 255, 0.6);
+            }
+
+            /* 文字层可交互 */
+            .xterm .xterm-text-layer {
+                z-index: 2;
+                pointer-events: auto;
+            }
+
+            /* 光标层在最顶层 */
+            .xterm .xterm-cursor-layer {
+                z-index: 3;
+            }
+
+            /* 确保文字背景透明 */
+            .xterm .xterm-rows>div>span {
+                background-color: transparent !important;
+            }
+
+            /* 选择区域高亮 */
+            .xterm .xterm-selection div {
+                background-color: rgba(51, 153, 255, 0.6) !important;
+            }
+
+            .xterm .xterm-cursor {
+                z-index: 4 !important;
+                border-left: 2px solid #11ff00 !important;
+                animation: blink 1s infinite !important;
+            }
+
+            @keyframes blink {
+                0%, 50% { opacity: 1; }
+                51%, 100% { opacity: 0.3; }
+            }
+
+            /* ===== Add Agent Dialog ===== */
+            .dialog-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.45);
+                z-index: 1000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .dialog-box {
+                background: #fff;
+                border-radius: 8px;
+                padding: 24px 28px;
+                width: 420px;
+                max-width: 90vw;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+            }
+
+            .dialog-title {
+                font-size: 16px;
+                font-weight: 600;
+                color: #303133;
+                margin-bottom: 18px;
+            }
+
+            .dialog-field {
+                margin-bottom: 14px;
+            }
+
+            .dialog-field label {
+                display: block;
+                font-size: 13px;
+                color: #606266;
+                margin-bottom: 6px;
+            }
+
+            .dialog-field input,
+            .dialog-field textarea {
+                width: 100%;
+                padding: 8px 12px;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: inherit;
+                outline: none;
+                transition: border-color 0.2s;
+                resize: vertical;
+            }
+
+            .dialog-field input:focus,
+            .dialog-field textarea:focus {
+                border-color: #409eff;
+            }
+
+            .dialog-actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: 10px;
+                margin-top: 18px;
+            }
+
+            .btn-cancel {
+                padding: 8px 20px;
+                border: 1px solid #dcdfe6;
+                background: #fff;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                color: #606266;
+                transition: border-color 0.2s;
+            }
+
+            .btn-cancel:hover {
+                border-color: #409eff;
+                color: #409eff;
+            }
+
+            .btn-confirm {
+                padding: 8px 20px;
+                border: none;
+                background: #409eff;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                color: #fff;
+                transition: background 0.2s;
+            }
+
+            .btn-confirm:hover {
+                background: #79bbff;
+            }
+
+            .btn-danger {
+                padding: 8px 20px;
+                border: 1px solid #f56c6c;
+                background: #fff;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                color: #f56c6c;
+                transition: all 0.2s;
+            }
+
+            .btn-danger:hover {
+                background: #f56c6c;
+                color: #fff;
+            }
+
+            .btn-danger-confirm {
+                padding: 8px 20px;
+                border: none;
+                background: #f56c6c;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                color: #fff;
+                transition: background 0.2s;
+            }
+
+            .btn-danger-confirm:hover {
+                background: #e74c3c;
+            }
+
+            .dialog-divider {
+                border: none;
+                border-top: 1px solid #ebeef5;
+                margin: 16px 0;
+            }
+
+            .dialog-section-title {
+                font-size: 12px;
+                color: #909399;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            .dialog-readonly-tag {
+                display: inline-block;
+                font-size: 11px;
+                color: #909399;
+                background: #f4f4f5;
+                border-radius: 3px;
+                padding: 1px 6px;
+                margin-left: 6px;
+                vertical-align: middle;
+            }
+
+            /* ===== 多选下拉框样式 ===== */
+            .multiselect-container {
+                position: relative;
+                width: 100%;
+            }
+
+            .multiselect-trigger {
+                min-height: 38px;
+                padding: 6px 12px;
+                background: white;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                cursor: pointer;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px;
+                align-items: center;
+            }
+
+            .multiselect-trigger:hover {
+                border-color: #409eff;
+            }
+
+            .multiselect-tag {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 2px 8px;
+                background: #409eff;
+                color: white;
+                border-radius: 4px;
+                font-size: 12px;
+                font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+            }
+
+            .multiselect-tag-remove {
+                cursor: pointer;
+                font-size: 14px;
+                line-height: 1;
+                opacity: 0.8;
+            }
+
+            .multiselect-tag-remove:hover {
+                opacity: 1;
+            }
+
+            .multiselect-placeholder {
+                color: #909399;
+                font-size: 13px;
+                font-style: italic;
+            }
+
+            .multiselect-arrow {
+                margin-left: auto;
+                color: #909399;
+                font-size: 12px;
+            }
+
+            .multiselect-dropdown {
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                margin-top: 4px;
+                background: white;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+                max-height: 200px;
+                overflow-y: auto;
+                z-index: 1000;
+            }
+
+            .multiselect-option {
+                padding: 8px 12px;
+                cursor: pointer;
+                font-size: 13px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .multiselect-option:hover {
+                background: #f5f7fa;
+            }
+
+            .multiselect-option.selected {
+                background: #ecf5ff;
+                color: #409eff;
+            }
+
+            .multiselect-checkbox {
+                width: 16px;
+                height: 16px;
+                border: 2px solid #dcdfe6;
+                border-radius: 3px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
+            }
+
+            .multiselect-option.selected .multiselect-checkbox {
+                background: #409eff;
+                border-color: #409eff;
+            }
+
+            .multiselect-checkbox::after {
+                content: '✓';
+                color: white;
+                font-size: 12px;
+                display: none;
+            }
+
+            .multiselect-option.selected .multiselect-checkbox::after {
+                display: block;
+            }
+
+            .multiselect-option-text {
+                flex: 1;
+            }
+
+            .multiselect-option-desc {
+                font-size: 11px;
+                color: #909399;
+                margin-left: 24px;
+            }
+
+            .multiselect-actions {
+                padding: 8px 12px;
+                border-bottom: 1px solid #ebeef5;
+                display: flex;
+                gap: 8px;
+            }
+
+            .multiselect-action-btn {
+                padding: 4px 12px;
+                background: #f5f7fa;
+                border: none;
+                border-radius: 4px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+
+            .multiselect-action-btn:hover {
+                background: #e4e7ed;
+            }
+
+            .dialog-hint {
+                font-size: 11px;
+                color: #909399;
+                font-weight: normal;
+                margin-left: 8px;
+            }
+
+            .multiselect-count {
+                font-size: 11px;
+                color: #6b7280;
+                margin-left: auto;
+            }
+
+            /* Markdown 渲染样式 */
+            .message-bubble {
+                word-break: break-word;
+                overflow-wrap: anywhere;
+            }
+
+            .message-bubble p {
+                margin: 8px 0;
+            }
+
+            .message-bubble p:first-child {
+                margin-top: 0;
+            }
+
+            .message-bubble p:last-child {
+                margin-bottom: 0;
+            }
+
+            /* 代码块 - 横向滚动 */
+            .message-bubble pre {
+                background: #f6f8fa;
+                padding: 12px;
+                border-radius: 6px;
+                overflow-x: auto;
+                max-width: 100%;
+                margin: 8px 0;
+            }
+
+            .message-bubble pre code {
+                white-space: pre;
+                word-break: normal;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+                font-size: 13px;
+            }
+
+            /* 内联代码 */
+            .message-bubble code:not(pre code) {
+                background: #f6f8fa;
+                padding: 2px 6px;
+                border-radius: 3px;
+                font-size: 0.9em;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            }
+
+            /* 表格 - 横向滚动 */
+            .message-bubble table {
+                display: block;
+                overflow-x: auto;
+                max-width: 100%;
+                border-collapse: collapse;
+                margin: 8px 0;
+            }
+
+            .message-bubble th,
+            .message-bubble td {
+                border: 1px solid #dcdfe6;
+                padding: 6px 12px;
+                white-space: nowrap;
+            }
+
+            .message-bubble th {
+                background: #f6f8fa;
+                font-weight: 600;
+            }
+
+            /* 列表 */
+            .message-bubble ul,
+            .message-bubble ol {
+                padding-left: 20px;
+                margin: 8px 0;
+            }
+
+            .message-bubble li {
+                margin: 4px 0;
+            }
+
+            /* 引用 */
+            .message-bubble blockquote {
+                border-left: 4px solid #dcdfe6;
+                padding-left: 12px;
+                margin: 8px 0;
+                color: #606266;
+            }
+
+            /* 标题 */
+            .message-bubble h1,
+            .message-bubble h2,
+            .message-bubble h3,
+            .message-bubble h4 {
+                margin: 12px 0 8px 0;
+                font-weight: 600;
+            }
+
+            .message-bubble h1:first-child,
+            .message-bubble h2:first-child,
+            .message-bubble h3:first-child {
+                margin-top: 0;
+            }
+
+            /* 链接 */
+            .message-bubble a {
+                color: #409eff;
+                text-decoration: none;
+            }
+
+            .message-bubble a:hover {
+                text-decoration: underline;
+            }
+
+            /* 分割线 */
+            .message-bubble hr {
+                border: none;
+                border-top: 1px solid #dcdfe6;
+                margin: 12px 0;
+            }
+
+            /* ===== Chat Header ===== */
+            .chat-header {
+                justify-content: space-between;
+            }
+
+            .history-btn {
+                width: 28px;
+                height: 28px;
+                border: 1px solid #dcdfe6;
+                border-radius: 4px;
+                background: white;
+                cursor: pointer;
+                font-size: 15px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #606266;
+                transition: all 0.2s;
+                flex-shrink: 0;
+            }
+
+            .history-btn:hover {
+                border-color: #409eff;
+                color: #409eff;
+            }
+
+            /* ===== History Drawer ===== */
+            .history-drawer {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 33.3%;
+                height: 100%;
+                background: white;
+                border-right: 1px solid #dcdfe6;
+                z-index: 20;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 2px 0 12px rgba(0,0,0,0.08);
+            }
+
+            .history-header {
+                height: 50px;
+                padding: 0 14px;
+                border-bottom: 1px solid #dcdfe6;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+
+            .history-header-title {
+                flex: 1;
+                font-weight: 600;
+                font-size: 15px;
+                color: #303133;
+            }
+
+            .history-back-btn,
+            .history-close-btn {
+                width: 28px;
+                height: 28px;
+                border: none;
+                background: none;
+                cursor: pointer;
+                border-radius: 4px;
+                font-size: 16px;
+                color: #606266;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.2s;
+                flex-shrink: 0;
+            }
+
+            .history-back-btn:hover,
+            .history-close-btn:hover {
+                background: #f0f2f5;
+                color: #303133;
+            }
+
+            .history-body {
+                flex: 1;
+                overflow-y: auto;
+                padding: 10px 0;
+            }
+
+            .history-loading,
+            .history-empty {
+                padding: 40px 20px;
+                text-align: center;
+                font-size: 13px;
+                color: #909399;
+            }
+
+            .history-date-group {
+                padding: 6px 14px 2px;
+                font-size: 11px;
+                color: #909399;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+            }
+
+            .history-session-item {
+                padding: 10px 14px;
+                cursor: pointer;
+                border-bottom: 1px solid #f4f4f5;
+                transition: background 0.15s;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .history-session-item:hover {
+                background: #f5f7fa;
+            }
+
+            .history-session-content {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .history-session-preview {
+                font-size: 13px;
+                color: #303133;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-bottom: 4px;
+            }
+
+            .history-session-meta {
+                font-size: 11px;
+                color: #909399;
+            }
+
+            .history-session-delete {
+                flex-shrink: 0;
+                width: 24px;
+                height: 24px;
+                border: none;
+                background: none;
+                cursor: pointer;
+                border-radius: 4px;
+                font-size: 14px;
+                color: #c0c4cc;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: background 0.15s, color 0.15s;
+                opacity: 0;
+            }
+
+            .history-session-item:hover .history-session-delete {
+                opacity: 1;
+            }
+
+            .history-session-delete:hover {
+                background: #fef0f0;
+                color: #f56c6c;
+            }
+
+            .history-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 12px;
+            }
+
+            .history-tool-hint {
+                display: inline-block;
+                padding: 3px 8px;
+                background: #f4f4f5;
+                border-radius: 3px;
+                font-size: 11px;
+                color: #909399;
+                font-family: 'Monaco', 'Menlo', monospace;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div id="app"></div>
+
+        <script>
+            const { createApp, ref, reactive, computed, onMounted, onUnmounted, nextTick } = Vue;
+            const { ElMessage } = ElementPlus;
+
+            const app = createApp({
+                setup() {
+                    // ===== Agent state =====
+                    const agents = ref([]);
+                    const currentAgentId = ref('default');
+
+                    // agentTabs: { agentId: [{ id, name, active, editing, originalName, agentId }] }
+                    const agentTabs = reactive({});
+
+                    // Global tab counter — ensures tabId is unique across all agents
+                    let globalTabCounter = 0;
+
+                    const terminals = reactive({});
+                    const chatMessages = reactive({});
+
+                    // ===== Computed =====
+
+                    // All tabs flattened (used for panel rendering so all panels stay in DOM)
+                    const allTabs = computed(() => {
+                        return Object.values(agentTabs).flat();
+                    });
+
+                    // Tabs for the current agent only
+                    const currentAgentTabs = computed(() => {
+                        return agentTabs[currentAgentId.value] || [];
+                    });
+
+                    // Active tab id for current agent
+                    const activeTabId = computed(() => {
+                        const tab = currentAgentTabs.value.find(t => t.active);
+                        return tab ? tab.id : null;
+                    });
+
+                    // ===== Tab operations (scoped to currentAgentId) =====
+
+                    const addTab = (agentId) => {
+                        const aid = agentId || currentAgentId.value;
+                        if (!agentTabs[aid]) {
+                            agentTabs[aid] = [];
+                        }
+                        const newId = globalTabCounter++;
+                        const tabName = `Terminal ${newId + 1}`;
+
+                        // Deactivate all tabs in this agent
+                        agentTabs[aid].forEach(tab => tab.active = false);
+                        agentTabs[aid].push({
+                            id: newId,
+                            name: tabName,
+                            active: true,
+                            editing: false,
+                            originalName: tabName,
+                            agentId: aid
+                        });
+
+                        chatMessages[newId] = [];
+
+                        nextTick(() => {
+                            createTerminal(newId, aid);
+                        });
+                    };
+
+                    const switchTab = (tabId) => {
+                        const tabs = agentTabs[currentAgentId.value];
+                        if (!tabs) return;
+                        tabs.forEach(tab => {
+                            tab.active = tab.id === tabId;
+                        });
+
+                        nextTick(() => {
+                            const term = terminals[tabId];
+                            if (term && term.fitAddon) {
+                                setTimeout(() => {
+                                    term.fitAddon.fit();
+                                }, 50);
+                            }
+                        });
+                    };
+
+                    const closeTab = (tabId, event) => {
+                        event.stopPropagation();
+                        try {
+                            const tabs = agentTabs[currentAgentId.value];
+                            if (!tabs) return;
+                            const index = tabs.findIndex(t => t.id === tabId);
+                            const wasActive = (tabId === activeTabId.value);
+
+                            if (terminals[tabId] && terminals[tabId].socket) {
+                                try { terminals[tabId].socket.disconnect(); } catch(e) {}
+                            }
+                            if (terminals[tabId] && terminals[tabId].term) {
+                                try { terminals[tabId].term.dispose(); } catch(e) {}
+                                delete terminals[tabId];
+                            }
+                            delete chatMessages[tabId];
+                            tabs.splice(index, 1);
+
+                            if (wasActive) {
+                                if (tabs.length === 0) {
+                                    addTab();
+                                } else {
+                                    const targetIndex = Math.min(index, tabs.length - 1);
+                                    switchTab(tabs[targetIndex].id);
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error closing tab:', error);
+                        }
+                    };
+
+                    const startEdit = (tabId) => {
+                        const tabs = agentTabs[currentAgentId.value] || [];
+                        const tab = tabs.find(t => t.id === tabId);
+                        if (tab) {
+                            tab.editing = true;
+                            tab.originalName = tab.name;
+                            nextTick(() => {
+                                const input = document.querySelector(`.tab-item[data-tab-id="${tabId}"] .tab-name-input`);
+                                if (input) { input.focus(); input.select(); }
+                            });
+                        }
+                    };
+
+                    const finishEdit = (tabId) => {
+                        const tabs = agentTabs[currentAgentId.value] || [];
+                        const tab = tabs.find(t => t.id === tabId);
+                        if (tab) {
+                            tab.editing = false;
+                            if (!tab.name.trim()) tab.name = tab.originalName;
+                        }
+                    };
+
+                    const cancelEdit = (tabId) => {
+                        const tabs = agentTabs[currentAgentId.value] || [];
+                        const tab = tabs.find(t => t.id === tabId);
+                        if (tab) { tab.name = tab.originalName; tab.editing = false; }
+                    };
+
+                    // ===== Agent operations =====
+
+                    const switchAgent = (agentId) => {
+                        currentAgentId.value = agentId;
+                        showHistoryDrawer.value = false;
+                        historyDetail.value = null;
+                        // Auto-create first tab if none exists
+                        if (!agentTabs[agentId] || agentTabs[agentId].length === 0) {
+                            addTab(agentId);
+                        } else {
+                            // Re-fit terminals for the now-visible tabs
+                            nextTick(() => {
+                                const tabs = agentTabs[agentId] || [];
+                                const activeTab = tabs.find(t => t.active);
+                                if (activeTab && terminals[activeTab.id] && terminals[activeTab.id].fitAddon) {
+                                    setTimeout(() => terminals[activeTab.id].fitAddon.fit(), 100);
+                                }
+                            });
+                        }
+                    };
+
+                    // ===== Panel resize state =====
+                    const chatWidthPct = ref(33.3);
+
+                    function startResize(e) {
+                        e.preventDefault();
+                        const divider = e.currentTarget;
+                        const panel = divider.closest('.panel');
+                        const startX = e.clientX;
+                        const startPct = chatWidthPct.value;
+                        const panelWidth = panel.offsetWidth;
+
+                        divider.classList.add('dragging');
+                        document.body.style.userSelect = 'none';
+                        document.body.style.cursor = 'col-resize';
+
+                        function onMouseMove(ev) {
+                            const dx = ev.clientX - startX;
+                            const newPct = startPct + (dx / panelWidth) * 100;
+                            chatWidthPct.value = Math.max(15, Math.min(75, newPct));
+                        }
+
+                        function onMouseUp() {
+                            divider.classList.remove('dragging');
+                            document.body.style.userSelect = '';
+                            document.body.style.cursor = '';
+                            document.removeEventListener('mousemove', onMouseMove);
+                            document.removeEventListener('mouseup', onMouseUp);
+                            // Re-fit all terminals after resize
+                            Object.values(terminals).forEach(t => {
+                                if (t && t.fitAddon) t.fitAddon.fit();
+                            });
+                        }
+
+                        document.addEventListener('mousemove', onMouseMove);
+                        document.addEventListener('mouseup', onMouseUp);
+                    }
+
+                    // ===== History drawer state =====
+                    const showHistoryDrawer = ref(false);
+                    const historySessions = ref([]);
+                    const historyDetail = ref(null);        // null = list, array = messages
+                    const historyDetailSessionId = ref(''); // session_id of the currently viewed detail
+                    const historyLoading = ref(false);
+
+                    // Add Agent dialog state
+                    const showAddAgentDialog = ref(false);
+                    const newAgentName = ref('');
+                    const newAgentPrompt = ref('');
+
+                    // Detail / Edit dialog state
+                    const showDetailDialog = ref(false);
+                    const detailAgent = ref(null);      // the agent being viewed/edited
+                    const detailName = ref('');
+                    const detailPrompt = ref('');
+                    const deleteConfirming = ref(false); // true = showing 2nd confirm
+
+                    // Skills & Tools selection state
+                    const availableSkills = ref([]);
+                    const availableTools = ref([]);
+                    const detailSkills = ref([]);
+                    const detailTools = ref([]);
+                    const newAgentSkills = ref([]);
+                    const newAgentTools = ref([]);
+                    const showSkillDropdown = ref(false);
+                    const showToolDropdown = ref(false);
+                    const addShowSkillDropdown = ref(false);
+                    const addShowToolDropdown = ref(false);
+
+                    const openDetailDialog = async (agent, event) => {
+                        event.stopPropagation();
+                        detailAgent.value = agent;
+                        detailName.value = agent.name;
+                        detailPrompt.value = agent.system_prompt || '';
+                        detailSkills.value = (agent.allowed_skills || []).slice();
+                        detailTools.value = (agent.allowed_tools || []).slice();
+                        deleteConfirming.value = false;
+
+                        // 实时获取最新的 skills 和 tools 列表
+                        await fetchAvailableResources();
+
+                        showDetailDialog.value = true;
+                    };
+
+                    const closeDetailDialog = () => {
+                        showDetailDialog.value = false;
+                        deleteConfirming.value = false;
+                        detailAgent.value = null;
+                    };
+
+                    const saveAgentDetail = async () => {
+                        const agent = detailAgent.value;
+                        if (!agent || agent.is_default) return;
+                        const name = detailName.value.trim();
+                        const prompt = detailPrompt.value.trim();
+                        if (!name || !prompt) return;
+                        try {
+                            const res = await fetch(`/api/agents/${agent.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    name,
+                                    system_prompt: prompt,
+                                    allowed_skills: detailSkills.value,
+                                    allowed_tools: detailTools.value
+                                })
+                            });
+                            if (!res.ok) throw new Error('Failed to update agent');
+                            const updated = await res.json();
+                            const idx = agents.value.findIndex(a => a.id === agent.id);
+                            if (idx !== -1) agents.value[idx] = updated;
+                            closeDetailDialog();
+                        } catch (e) {
+                            console.error(e);
+                            ElMessage.error('保存失败: ' + e.message);
+                        }
+                    };
+
+                    const openAddAgentDialog = async () => {
+                        newAgentName.value = '';
+                        newAgentPrompt.value = '';
+                        newAgentSkills.value = [];
+                        newAgentTools.value = [];
+
+                        // 实时获取最新的 skills 和 tools 列表
+                        await fetchAvailableResources();
+
+                        showAddAgentDialog.value = true;
+                    };
+
+                    const confirmAddAgent = async () => {
+                        const name = newAgentName.value.trim();
+                        const prompt = newAgentPrompt.value.trim();
+                        if (!name || !prompt) return;
+
+                        try {
+                            const res = await fetch('/api/agents', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    name,
+                                    system_prompt: prompt,
+                                    allowed_skills: newAgentSkills.value,
+                                    allowed_tools: newAgentTools.value
+                                })
+                            });
+                            if (!res.ok) throw new Error('Failed to create agent');
+                            const profile = await res.json();
+                            agents.value.push(profile);
+                            showAddAgentDialog.value = false;
+                            switchAgent(profile.id);
+                        } catch (e) {
+                            console.error(e);
+                            ElMessage.error('创建失败: ' + e.message);
+                        }
+                    };
+
+                    // 获取可用资源
+                    const fetchAvailableResources = async () => {
+                        try {
+                            const [skillsRes, toolsRes] = await Promise.all([
+                                fetch('/api/skills'),
+                                fetch('/api/tools')
+                            ]);
+                            if (skillsRes.ok && toolsRes.ok) {
+                                const skillsData = await skillsRes.json();
+                                const toolsData = await toolsRes.json();
+                                availableSkills.value = skillsData.skills || [];
+                                availableTools.value = toolsData.tools || [];
+                            }
+                        } catch (e) {
+                            console.error('Failed to fetch resources:', e);
+                        }
+                    };
+
+                    // 多选框操作方法
+                    const toggleSkillDropdown = () => {
+                        showSkillDropdown.value = !showSkillDropdown.value;
+                        showToolDropdown.value = false;
+                    };
+
+                    const toggleToolDropdown = () => {
+                        showToolDropdown.value = !showToolDropdown.value;
+                        showSkillDropdown.value = false;
+                    };
+
+                    const toggleAddSkillDropdown = () => {
+                        addShowSkillDropdown.value = !addShowSkillDropdown.value;
+                        addShowToolDropdown.value = false;
+                    };
+
+                    const toggleAddToolDropdown = () => {
+                        addShowToolDropdown.value = !addShowToolDropdown.value;
+                        addShowSkillDropdown.value = false;
+                    };
+
+                    const closeAllDropdowns = () => {
+                        showSkillDropdown.value = false;
+                        showToolDropdown.value = false;
+                        addShowSkillDropdown.value = false;
+                        addShowToolDropdown.value = false;
+                    };
+
+                    // 技能选择
+                    const selectSkill = (skillName) => {
+                        if (!detailSkills.value.includes(skillName)) {
+                            detailSkills.value.push(skillName);
+                        }
+                    };
+
+                    const removeSkill = (skillName) => {
+                        detailSkills.value = detailSkills.value.filter(s => s !== skillName);
+                    };
+
+                    const selectAddSkill = (skillName) => {
+                        if (!newAgentSkills.value.includes(skillName)) {
+                            newAgentSkills.value.push(skillName);
+                        }
+                    };
+
+                    const removeAddSkill = (skillName) => {
+                        newAgentSkills.value = newAgentSkills.value.filter(s => s !== skillName);
+                    };
+
+                    // 工具选择
+                    const selectTool = (toolName) => {
+                        if (!detailTools.value.includes(toolName)) {
+                            detailTools.value.push(toolName);
+                        }
+                    };
+
+                    const removeTool = (toolName) => {
+                        detailTools.value = detailTools.value.filter(t => t !== toolName);
+                    };
+
+                    const selectAddTool = (toolName) => {
+                        if (!newAgentTools.value.includes(toolName)) {
+                            newAgentTools.value.push(toolName);
+                        }
+                    };
+
+                    const removeAddTool = (toolName) => {
+                        newAgentTools.value = newAgentTools.value.filter(t => t !== toolName);
+                    };
+
+                    // 选项切换
+                    const toggleSkillItem = (item) => {
+                        if (detailSkills.value.includes(item.name)) {
+                            removeSkill(item.name);
+                        } else {
+                            selectSkill(item.name);
+                        }
+                    };
+
+                    const toggleToolItem = (item) => {
+                        if (detailTools.value.includes(item.name)) {
+                            removeTool(item.name);
+                        } else {
+                            selectTool(item.name);
+                        }
+                    };
+
+                    const toggleAddSkillItem = (item) => {
+                        if (newAgentSkills.value.includes(item.name)) {
+                            removeAddSkill(item.name);
+                        } else {
+                            selectAddSkill(item.name);
+                        }
+                    };
+
+                    const toggleAddToolItem = (item) => {
+                        if (newAgentTools.value.includes(item.name)) {
+                            removeAddTool(item.name);
+                        } else {
+                            selectAddTool(item.name);
+                        }
+                    };
+
+                    // 全选方法
+                    const selectAll = () => {
+                        availableSkills.value.forEach(skill => {
+                            if (!detailSkills.value.includes(skill.name)) {
+                                detailSkills.value.push(skill.name);
+                            }
+                        });
+                    };
+
+                    const selectAllTools = () => {
+                        availableTools.value.forEach(tool => {
+                            if (!detailTools.value.includes(tool.name)) {
+                                detailTools.value.push(tool.name);
+                            }
+                        });
+                    };
+
+                    const selectAllAddSkills = () => {
+                        availableSkills.value.forEach(skill => {
+                            if (!newAgentSkills.value.includes(skill.name)) {
+                                newAgentSkills.value.push(skill.name);
+                            }
+                        });
+                    };
+
+                    const selectAllAddTools = () => {
+                        availableTools.value.forEach(tool => {
+                            if (!newAgentTools.value.includes(tool.name)) {
+                                newAgentTools.value.push(tool.name);
+                            }
+                        });
+                    };
+
+                    const deleteAgent = async (agentId) => {
+                        if (agentId === 'default') return;
+                        // First click: show confirmation
+                        if (!deleteConfirming.value) {
+                            deleteConfirming.value = true;
+                            return;
+                        }
+                        // Second click: actually delete
+                        try {
+                            const res = await fetch(`/api/agents/${agentId}`, { method: 'DELETE' });
+                            if (!res.ok) throw new Error('Failed to delete agent');
+                            agents.value = agents.value.filter(a => a.id !== agentId);
+                            if (agentTabs[agentId]) {
+                                agentTabs[agentId].forEach(tab => {
+                                    if (terminals[tab.id]) {
+                                        try { terminals[tab.id].socket.disconnect(); } catch(e) {}
+                                        try { terminals[tab.id].term.dispose(); } catch(e) {}
+                                        delete terminals[tab.id];
+                                    }
+                                    delete chatMessages[tab.id];
+                                });
+                                delete agentTabs[agentId];
+                            }
+                            if (currentAgentId.value === agentId) {
+                                switchAgent('default');
+                            }
+                            closeDetailDialog();
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    };
+
+                    // ===== History drawer =====
+
+                    const openHistoryDrawer = async () => {
+                        showHistoryDrawer.value = true;
+                        historyDetail.value = null;
+                        historyLoading.value = true;
+                        try {
+                            const res = await fetch(`/api/conversations/${currentAgentId.value}`);
+                            if (res.ok) historySessions.value = await res.json();
+                            else historySessions.value = [];
+                        } catch(e) {
+                            console.error(e);
+                            historySessions.value = [];
+                        }
+                        historyLoading.value = false;
+                    };
+
+                    const closeHistoryDrawer = () => {
+                        showHistoryDrawer.value = false;
+                        historyDetail.value = null;
+                    };
+
+                    const openHistorySession = async (sessionId) => {
+                        historyLoading.value = true;
+                        historyDetailSessionId.value = sessionId;
+                        try {
+                            const res = await fetch(`/api/conversations/${currentAgentId.value}/${sessionId}`);
+                            if (res.ok) historyDetail.value = await res.json();
+                        } catch(e) {
+                            console.error(e);
+                        }
+                        historyLoading.value = false;
+                    };
+
+                    const deleteHistorySession = async (sessionId, event) => {
+                        event.stopPropagation();
+                        try {
+                            const res = await fetch(`/api/conversations/${currentAgentId.value}/${sessionId}`, { method: 'DELETE' });
+                            if (res.ok) {
+                                historySessions.value = historySessions.value.filter(s => s.session_id !== sessionId);
+                            }
+                        } catch(e) {
+                            console.error(e);
+                        }
+                    };
+
+                    const continueFromHistory = () => {
+                        const tabId = activeTabId.value;
+                        const socket = terminals[tabId]?.socket;
+                        if (!socket) return;
+                        socket.emit('load_history', { session_id: historyDetailSessionId.value });
+                    };
+
+                    // ===== Terminal =====
+
+                    const createTerminal = (id, agentId) => {
+                        const termEl = document.getElementById(`terminal-${id}`);
+                        if (!termEl) return;
+
+                        const term = new Terminal({
+                            cursorBlink: true,
+                            disableStdin: false,
+                            theme: {
+                                background: '#fffff0',
+                                foreground: '#000000',
+                                cursor: '#000000',
+                                selection: 'rgba(0, 100, 200, 0.3)'
+                            }
+                        });
+
+                        term.open(termEl);
+
+                        const fitAddon = new FitAddon.FitAddon();
+                        term.loadAddon(fitAddon);
+
+                        // Pass agent_id so backend uses the correct system prompt
+                        const aid = agentId || currentAgentId.value;
+                        const socket = io.connect(
+                            'http://' + document.domain + ':' + location.port,
+                            { query: { agent_id: aid } }
+                        );
+
+                        socket.on('start_conversion', (data) => {
+                            const c_id = Math.random().toString(36).slice(2, 12).padEnd(10, '0');
+                            socket.emit('start_conversion', { id: c_id });
+                        });
+
+                        socket.on('terminal_output', (msg) => {
+                            term.write(msg.data);
+                        });
+
+                        socket.on('chat_out', (data) => {
+                            addChatMessage(id, 'bot', data.message);
+                        });
+
+                        socket.on('history_loaded', (data) => {
+                            // Replace chat display with historical messages
+                            chatMessages[id] = (data.messages || []);
+                            // Close drawer and return to chat
+                            showHistoryDrawer.value = false;
+                            historyDetail.value = null;
+                            nextTick(() => {
+                                const chatEl = document.getElementById(`chat-messages-${id}`);
+                                if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+                            });
+                        });
+
+                        socket.on('cmd_exe', (data) => {
+                            if (data.cmd) {
+                                term.paste(data.cmd + '\r\n');
+                                setTimeout(() => sendCmdResult(id), 1000);
+                            }
+                            if (data.request === 'getTermContent') {
+                                const content = getTerminalContent(id);
+                                socket.emit('cmd_res', { terminal_content: content });
+                            }
+                        });
+
+                        term.onData((input) => {
+                            socket.emit('terminal_input', { input });
+                        });
+
+                        const resizeObserver = new ResizeObserver(() => {
+                            fitAddon.fit();
+                            const dims = fitAddon.proposeDimensions();
+                            if (dims) {
+                                socket.emit('terminal_resize', { rows: dims.rows, cols: dims.cols });
+                            }
+                        });
+
+                        resizeObserver.observe(termEl);
+
+                        terminals[id] = { term, socket, fitAddon, resizeObserver };
+
+                        setTimeout(() => {
+                            fitAddon.fit();
+                            const dims = fitAddon.proposeDimensions();
+                            if (dims) {
+                                socket.emit('terminal_resize', { rows: dims.rows, cols: dims.cols });
+                            }
+                        }, 500);
+                    };
+
+                    const getTerminalContent = (id) => {
+                        const term = terminals[id]?.term;
+                        if (!term) return '';
+                        const buffer = term.buffer.active;
+                        let content = '';
+                        for (let i = 0; i < buffer.length; i++) {
+                            const line = buffer.getLine(i);
+                            if (line) content += line.translateToString(true) + '\n';
+                        }
+                        return content;
+                    };
+
+                    const sendCmdResult = (id) => {
+                        const socket = terminals[id]?.socket;
+                        if (!socket) return;
+                        setTimeout(() => {
+                            const content = getTerminalContent(id);
+                            socket.emit('cmd_res', { cmd_res: content });
+                        }, 1000);
+                    };
+
+                    // ===== Chat =====
+
+                    const addChatMessage = (id, type, text) => {
+                        if (!chatMessages[id]) chatMessages[id] = [];
+                        chatMessages[id].push({
+                            type,
+                            text,
+                            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        });
+                        nextTick(() => {
+                            const chatEl = document.getElementById(`chat-messages-${id}`);
+                            if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+                        });
+                    };
+
+                    const sendChatMessage = (id) => {
+                        const inputEl = document.getElementById(`chat-input-${id}`);
+                        if (!inputEl) return;
+                        const text = inputEl.value.trim();
+                        if (!text) return;
+                        const socket = terminals[id]?.socket;
+                        if (socket) socket.emit('chat_in', { message: text });
+                        addChatMessage(id, 'user', text);
+                        inputEl.value = '';
+                        inputEl.style.height = 'auto';
+                        inputEl.focus();
+                    };
+
+                    const handleInputKeydown = (event, id) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            if (!event.isComposing) sendChatMessage(id);
+                        }
+                    };
+
+                    const adjustTextareaHeight = (event) => {
+                        event.target.style.height = 'auto';
+                        event.target.style.height = Math.min(event.target.scrollHeight, 120) + 'px';
+                    };
+
+                    // Markdown
+                    marked.setOptions({ breaks: true, gfm: true });
+                    const renderMarkdown = (text) => {
+                        if (!text) return '';
+                        return marked.parse(text);
+                    };
+
+                    // ===== Lifecycle =====
+
+                    onMounted(async () => {
+                        // Load agent list from server
+                        try {
+                            const res = await fetch('/api/agents');
+                            agents.value = await res.json();
+                        } catch (e) {
+                            agents.value = [{ id: 'default', name: '主 Agent', is_default: true }];
+                        }
+
+                        // Fetch available skills and tools
+                        fetchAvailableResources();
+
+                        // Click outside to close dropdowns
+                        document.addEventListener('click', (e) => {
+                            if (!e.target.closest('.multiselect-container')) {
+                                closeAllDropdowns();
+                            }
+                        });
+
+                        // Create first tab for default agent
+                        addTab('default');
+                    });
+
+                    onUnmounted(() => {
+                        Object.values(terminals).forEach(terminal => {
+                            if (terminal.socket) terminal.socket.disconnect();
+                            if (terminal.resizeObserver) terminal.resizeObserver.disconnect();
+                            if (terminal.term) terminal.term.dispose();
+                        });
+                    });
+
+                    return {
+                        agents,
+                        currentAgentId,
+                        agentTabs,
+                        allTabs,
+                        currentAgentTabs,
+                        activeTabId,
+                        chatMessages,
+                        showAddAgentDialog,
+                        newAgentName,
+                        newAgentPrompt,
+                        showDetailDialog,
+                        detailAgent,
+                        detailName,
+                        detailPrompt,
+                        deleteConfirming,
+                        // Skills & Tools state
+                        availableSkills,
+                        availableTools,
+                        detailSkills,
+                        detailTools,
+                        newAgentSkills,
+                        newAgentTools,
+                        showSkillDropdown,
+                        showToolDropdown,
+                        addShowSkillDropdown,
+                        addShowToolDropdown,
+                        // Methods
+                        switchAgent,
+                        addTab,
+                        switchTab,
+                        closeTab,
+                        startEdit,
+                        finishEdit,
+                        cancelEdit,
+                        openAddAgentDialog,
+                        confirmAddAgent,
+                        openDetailDialog,
+                        closeDetailDialog,
+                        saveAgentDetail,
+                        deleteAgent,
+                        sendChatMessage,
+                        handleInputKeydown,
+                        adjustTextareaHeight,
+                        renderMarkdown,
+                        // Skills & Tools methods
+                        fetchAvailableResources,
+                        toggleSkillDropdown,
+                        toggleToolDropdown,
+                        toggleAddSkillDropdown,
+                        toggleAddToolDropdown,
+                        closeAllDropdowns,
+                        selectSkill,
+                        removeSkill,
+                        selectAddSkill,
+                        removeAddSkill,
+                        selectTool,
+                        removeTool,
+                        selectAddTool,
+                        removeAddTool,
+                        toggleSkillItem,
+                        toggleToolItem,
+                        toggleAddSkillItem,
+                        toggleAddToolItem,
+                        selectAll,
+                        selectAllTools,
+                        selectAllAddSkills,
+                        selectAllAddTools,
+                        // Panel resize
+                        chatWidthPct,
+                        startResize,
+                        // History drawer
+                        showHistoryDrawer,
+                        historySessions,
+                        historyDetail,
+                        historyDetailSessionId,
+                        historyLoading,
+                        openHistoryDrawer,
+                        closeHistoryDrawer,
+                        openHistorySession,
+                        deleteHistorySession,
+                        continueFromHistory
+                    };
+                },
+
+                template: `
+                <div id="app">
+                    <!-- Agent sidebar -->
+                    <div class="agent-sidebar">
+                        <div class="agent-sidebar-title">Agents</div>
+                        <div class="agent-list">
+                            <div
+                                v-for="agent in agents"
+                                :key="agent.id"
+                                class="agent-item"
+                                :class="{ active: agent.id === currentAgentId }"
+                                @click="switchAgent(agent.id)"
+                            >
+                                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ agent.name }}</span>
+                                <span
+                                    class="agent-detail-btn"
+                                    @click="openDetailDialog(agent, $event)"
+                                    title="详情"
+                                >⚙</span>
+                            </div>
+                        </div>
+                        <div class="add-agent-btn" @click="openAddAgentDialog">+ 添加 Agent</div>
+                    </div>
+
+                    <!-- Main area -->
+                    <div class="main-area">
+                        <!-- 标签栏 (current agent's tabs) -->
+                        <div class="tab-bar">
+                            <div
+                                v-for="tab in currentAgentTabs"
+                                :key="tab.id"
+                                :data-tab-id="tab.id"
+                                class="tab-item"
+                                :class="{ active: tab.active }"
+                                @click="switchTab(tab.id)"
+                                @dblclick="startEdit(tab.id)"
+                            >
+                                <input
+                                    v-if="tab.editing"
+                                    class="tab-name-input"
+                                    v-model="tab.name"
+                                    @blur="finishEdit(tab.id)"
+                                    @keyup.enter="finishEdit(tab.id)"
+                                    @keyup.esc="cancelEdit(tab.id)"
+                                    @click.stop
+                                />
+                                <template v-else>
+                                    {{ tab.name }}
+                                    <span class="close-btn" @click="closeTab(tab.id, $event)">×</span>
+                                </template>
+                            </div>
+                            <div class="add-tab-btn" @click="addTab()">+</div>
+                        </div>
+
+                        <!-- 面板容器 — ALL tabs from all agents stay in DOM -->
+                        <div class="panel-container">
+
+                            <!-- History drawer — overlays chat-area portion -->
+                            <div class="history-drawer" v-if="showHistoryDrawer">
+                                <div class="history-header">
+                                    <button class="history-back-btn" v-if="historyDetail !== null" @click="historyDetail = null" title="返回列表">←</button>
+                                    <span class="history-header-title">{{ historyDetail !== null ? '对话详情' : '历史记录' }}</span>
+                                    <button v-if="historyDetail !== null" class="btn-confirm" style="padding:4px 10px;font-size:12px;" @click="continueFromHistory" title="加载到当前会话">继续对话</button>
+                                    <button class="history-close-btn" @click="closeHistoryDrawer" title="关闭">×</button>
+                                </div>
+
+                                <div class="history-loading" v-if="historyLoading">加载中...</div>
+
+                                <!-- Session list -->
+                                <div v-else-if="historyDetail === null" class="history-body">
+                                    <div class="history-empty" v-if="historySessions.length === 0">暂无历史记录</div>
+                                    <template v-else>
+                                        <div
+                                            v-for="session in historySessions"
+                                            :key="session.session_id"
+                                            class="history-session-item"
+                                            @click="openHistorySession(session.session_id)"
+                                        >
+                                            <div class="history-session-content">
+                                                <div class="history-session-preview">{{ session.first_msg || '（空对话）' }}</div>
+                                                <div class="history-session-meta">{{ session.ts }} · {{ session.count }} 条</div>
+                                            </div>
+                                            <button class="history-session-delete" @click="deleteHistorySession(session.session_id, $event)" title="删除">🗑</button>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <!-- Message detail -->
+                                <div v-else class="history-messages">
+                                    <template v-for="(msg, i) in historyDetail" :key="i">
+                                        <!-- User messages -->
+                                        <div v-if="msg.role === 'user'" class="message-item message-user">
+                                            <div class="message-bubble" style="white-space:pre-wrap;">{{ msg.content }}</div>
+                                            <div class="message-time">{{ msg.ts }}</div>
+                                        </div>
+                                        <!-- Assistant text response -->
+                                        <div v-else-if="msg.role === 'assistant' && msg.content" class="message-item message-bot">
+                                            <div class="message-bubble" v-html="renderMarkdown(msg.content)"></div>
+                                            <div class="message-time">{{ msg.ts }}</div>
+                                        </div>
+                                        <!-- Tool call hint -->
+                                        <div v-else-if="msg.role === 'assistant' && msg.metadata && msg.metadata.tool_calls" class="message-item message-bot">
+                                            <div class="message-bubble" style="padding:6px 10px;">
+                                                <span class="history-tool-hint">🔧 {{ msg.metadata.tool_calls[0].function.name }}</span>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div
+                                v-for="tab in allTabs"
+                                :key="tab.id"
+                                class="panel"
+                                :class="{ active: tab.active && tab.agentId === currentAgentId }"
+                            >
+                                <!-- 聊天区域 (left 1/3) -->
+                                <div class="chat-area" :style="{ width: chatWidthPct + '%' }">
+                                    <div class="chat-header">
+                                        <span>Assistant</span>
+                                        <button class="history-btn" @click="openHistoryDrawer" title="历史记录">⏱</button>
+                                    </div>
+                                    <div
+                                        class="chat-messages"
+                                        :id="'chat-messages-' + tab.id"
+                                    >
+                                        <div
+                                            v-for="(msg, index) in chatMessages[tab.id]"
+                                            :key="index"
+                                            class="message-item"
+                                            :class="'message-' + msg.type"
+                                        >
+                                            <div
+                                                class="message-bubble"
+                                                v-html="msg.type === 'user' ? msg.text : renderMarkdown(msg.text)"
+                                            ></div>
+                                            <div class="message-time">{{ msg.time }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="chat-input-area">
+                                        <div class="chat-input-wrapper">
+                                            <textarea
+                                                :id="'chat-input-' + tab.id"
+                                                class="chat-textarea"
+                                                rows="1"
+                                                placeholder="..."
+                                                @keydown="handleInputKeydown($event, tab.id)"
+                                                @input="adjustTextareaHeight"
+                                            ></textarea>
+                                            <button class="send-btn" @click="sendChatMessage(tab.id)">SEND</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 可拖拽分隔线 -->
+                                <div class="panel-divider" @mousedown="startResize($event)"></div>
+
+                                <!-- 终端区域 (right 2/3) -->
+                                <div class="terminal-area">
+                                    <div class="terminal-wrapper">
+                                        <div :id="'terminal-' + tab.id"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Add Agent Dialog -->
+                    <div class="dialog-overlay" v-if="showAddAgentDialog" @click.self="showAddAgentDialog=false">
+                        <div class="dialog-box" style="max-width: 650px;">
+                            <div class="dialog-title">添加自定义 Agent</div>
+
+                            <div class="dialog-field">
+                                <label>Agent 名称</label>
+                                <input v-model="newAgentName" placeholder="例如：Python专家、文档助手..." />
+                            </div>
+
+                            <div class="dialog-field">
+                                <label>系统提示词</label>
+                                <textarea v-model="newAgentPrompt" rows="4" placeholder="描述这个 Agent 的专长和限制..."></textarea>
+                            </div>
+
+                            <!-- 技能选择 -->
+                            <div class="dialog-field">
+                                <label>
+                                    允许的技能
+                                    <span class="dialog-hint">留空 = 允许所有技能</span>
+                                </label>
+
+                                <div class="multiselect-container">
+                                    <div class="multiselect-trigger" @click="toggleAddSkillDropdown">
+                                        <!-- 已选技能标签 -->
+                                        <span
+                                            v-for="skillName in newAgentSkills"
+                                            :key="skillName"
+                                            class="multiselect-tag"
+                                        >
+                                            {{ skillName }}
+                                            <span class="multiselect-tag-remove" @click="removeAddSkill(skillName, $event)">×</span>
+                                        </span>
+                                        <!-- 占位符 -->
+                                        <span v-if="newAgentSkills.length === 0" class="multiselect-placeholder">选择技能（留空允许所有）</span>
+                                        <!-- 下拉箭头 -->
+                                        <span class="multiselect-arrow">{{ addShowSkillDropdown ? '▲' : '▼' }}</span>
+                                    </div>
+
+                                    <!-- 下拉菜单 -->
+                                    <div class="multiselect-dropdown" v-if="addShowSkillDropdown && availableSkills.length > 0" @click.stop>
+                                        <!-- 操作按钮 -->
+                                        <div class="multiselect-actions">
+                                            <button class="multiselect-action-btn" @click="selectAllAddSkills">全选</button>
+                                            <button class="multiselect-action-btn" @click="newAgentSkills = []">清除</button>
+                                        </div>
+
+                                        <!-- 技能选项 -->
+                                        <div
+                                            v-for="skill in availableSkills"
+                                            :key="skill.name"
+                                            class="multiselect-option"
+                                            :class="{ selected: newAgentSkills.includes(skill.name) }"
+                                            @click="toggleAddSkillItem(skill)"
+                                        >
+                                            <div class="multiselect-checkbox"></div>
+                                            <div class="multiselect-option-text">{{ skill.name }}</div>
+                                            <div class="multiselect-option-desc">{{ skill.description }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 工具选择 -->
+                            <div class="dialog-field">
+                                <label>
+                                    允许的工具
+                                    <span class="dialog-hint">留空 = 允许所有工具</span>
+                                </label>
+
+                                <div class="multiselect-container">
+                                    <div class="multiselect-trigger" @click="toggleAddToolDropdown">
+                                        <!-- 已选工具标签 -->
+                                        <span
+                                            v-for="toolName in newAgentTools.slice(0, 5)"
+                                            :key="toolName"
+                                            class="multiselect-tag"
+                                        >
+                                            {{ toolName }}
+                                            <span class="multiselect-tag-remove" @click="removeAddTool(toolName, $event)">×</span>
+                                        </span>
+                                        <!-- 更多提示 -->
+                                        <span v-if="newAgentTools.length > 5" class="multiselect-tag">+{{ newAgentTools.length - 5 }}</span>
+                                        <!-- 占位符 -->
+                                        <span v-if="newAgentTools.length === 0" class="multiselect-placeholder">选择工具（留空允许所有）</span>
+                                        <!-- 下拉箭头 -->
+                                        <span class="multiselect-arrow">{{ addShowToolDropdown ? '▲' : '▼' }}</span>
+                                    </div>
+
+                                    <!-- 下拉菜单 -->
+                                    <div class="multiselect-dropdown" v-if="addShowToolDropdown && availableTools.length > 0" @click.stop>
+                                        <!-- 操作按钮 -->
+                                        <div class="multiselect-actions">
+                                            <button class="multiselect-action-btn" @click="selectAllAddTools">全选</button>
+                                            <button class="multiselect-action-btn" @click="newAgentTools = []">清除</button>
+                                        </div>
+
+                                        <!-- 工具选项 -->
+                                        <div
+                                            v-for="tool in availableTools"
+                                            :key="tool.name"
+                                            class="multiselect-option"
+                                            :class="{ selected: newAgentTools.includes(tool.name) }"
+                                            @click="toggleAddToolItem(tool)"
+                                        >
+                                            <div class="multiselect-checkbox"></div>
+                                            <div class="multiselect-option-text">{{ tool.name }}</div>
+                                            <div class="multiselect-option-desc">{{ tool.description.substring(0, 40) }}...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="dialog-actions">
+                                <button class="btn-cancel" @click="showAddAgentDialog=false">取消</button>
+                                <button class="btn-confirm" @click="confirmAddAgent">创建</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Agent Detail / Edit Dialog -->
+                    <div class="dialog-overlay" v-if="showDetailDialog && detailAgent" @click.self="closeDetailDialog">
+                        <div class="dialog-box" style="max-width: 650px;">
+                            <div class="dialog-title">
+                                {{ detailAgent.is_default ? '查看主 Agent' : '编辑 Agent' }}
+                            </div>
+
+                            <div class="dialog-field">
+                                <label>
+                                    Agent 名称
+                                    <span v-if="detailAgent.is_default" class="dialog-readonly-tag">主 Agent</span>
+                                </label>
+                                <input
+                                    v-model="detailName"
+                                    :readonly="detailAgent.is_default"
+                                    :style="detailAgent.is_default ? 'background:#f5f7fa;color:#909399;' : ''"
+                                    placeholder="Agent 名称"
+                                />
+                            </div>
+
+                            <div class="dialog-field">
+                                <label>
+                                    系统提示词
+                                    <span v-if="detailAgent.is_default" class="dialog-readonly-tag">只读</span>
+                                </label>
+                                <textarea
+                                    v-model="detailPrompt"
+                                    rows="4"
+                                    :readonly="detailAgent.is_default"
+                                    :style="detailAgent.is_default ? 'background:#f5f7fa;color:#909399;' : ''"
+                                    placeholder="系统提示词"
+                                ></textarea>
+                            </div>
+
+                            <!-- 技能选择 -->
+                            <div class="dialog-field">
+                                <label>
+                                    允许的技能
+                                    <span class="dialog-hint">{{ detailAgent.is_default ? '主 Agent 默认所有技能' : '留空 = 允许所有' }}</span>
+                                </label>
+
+                                <!-- 主 Agent 显示为只读文本 -->
+                                <div v-if="detailAgent.is_default" class="multiselect-container">
+                                    <div class="multiselect-trigger" style="background:#f5f7fa;cursor:default;">
+                                        <span class="multiselect-placeholder">所有可用技能（主 Agent 无限制）</span>
+                                    </div>
+                                </div>
+
+                                <!-- 自定义 Agent 显示多选框 -->
+                                <div v-else class="multiselect-container">
+                                    <div class="multiselect-trigger" @click="toggleSkillDropdown">
+                                        <!-- 已选技能标签 -->
+                                        <span
+                                            v-for="skillName in detailSkills"
+                                            :key="skillName"
+                                            class="multiselect-tag"
+                                        >
+                                            {{ skillName }}
+                                            <span class="multiselect-tag-remove" @click="removeSkill(skillName, $event)">×</span>
+                                        </span>
+                                        <!-- 占位符 -->
+                                        <span v-if="detailSkills.length === 0" class="multiselect-placeholder">选择技能（留空允许所有）</span>
+                                        <!-- 下拉箭头 -->
+                                        <span class="multiselect-arrow">{{ showSkillDropdown ? '▲' : '▼' }}</span>
+                                    </div>
+
+                                    <!-- 下拉菜单 -->
+                                    <div class="multiselect-dropdown" v-if="showSkillDropdown && availableSkills.length > 0" @click.stop>
+                                        <!-- 操作按钮 -->
+                                        <div class="multiselect-actions">
+                                            <button class="multiselect-action-btn" @click="selectAll">全选</button>
+                                            <button class="multiselect-action-btn" @click="detailSkills = []">清除</button>
+                                        </div>
+
+                                        <!-- 技能选项 -->
+                                        <div
+                                            v-for="skill in availableSkills"
+                                            :key="skill.name"
+                                            class="multiselect-option"
+                                            :class="{ selected: detailSkills.includes(skill.name) }"
+                                            @click="toggleSkillItem(skill)"
+                                        >
+                                            <div class="multiselect-checkbox"></div>
+                                            <div class="multiselect-option-text">{{ skill.name }}</div>
+                                            <div class="multiselect-option-desc">{{ skill.description }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 工具选择 -->
+                            <div class="dialog-field">
+                                <label>
+                                    允许的工具
+                                    <span class="dialog-hint">{{ detailAgent.is_default ? '主 Agent 显式配置' : '留空 = 允许所有' }}</span>
+                                </label>
+
+                                <!-- 主 Agent 显示为只读标签列表 -->
+                                <div v-if="detailAgent.is_default" class="multiselect-container">
+                                    <div class="multiselect-trigger" style="background:#f5f7fa;cursor:default;">
+                                        <span
+                                            v-for="toolName in detailTools.slice(0, 5)"
+                                            :key="toolName"
+                                            class="multiselect-tag"
+                                        >
+                                            {{ toolName }}
+                                        </span>
+                                        <span v-if="detailTools.length > 5" class="multiselect-tag">+{{ detailTools.length - 5 }} 更多</span>
+                                        <span class="multiselect-count">{{ detailTools.length }} 个工具</span>
+                                    </div>
+                                </div>
+
+                                <!-- 自定义 Agent 显示多选框 -->
+                                <div v-else class="multiselect-container">
+                                    <div class="multiselect-trigger" @click="toggleToolDropdown">
+                                        <!-- 已选工具标签 -->
+                                        <span
+                                            v-for="toolName in detailTools.slice(0, 5)"
+                                            :key="toolName"
+                                            class="multiselect-tag"
+                                        >
+                                            {{ toolName }}
+                                            <span class="multiselect-tag-remove" @click="removeTool(toolName, $event)">×</span>
+                                        </span>
+                                        <!-- 更多提示 -->
+                                        <span v-if="detailTools.length > 5" class="multiselect-tag">+{{ detailTools.length - 5 }}</span>
+                                        <!-- 占位符 -->
+                                        <span v-if="detailTools.length === 0" class="multiselect-placeholder">选择工具（留空允许所有）</span>
+                                        <!-- 下拉箭头 -->
+                                        <span class="multiselect-arrow">{{ showToolDropdown ? '▲' : '▼' }}</span>
+                                    </div>
+
+                                    <!-- 下拉菜单 -->
+                                    <div class="multiselect-dropdown" v-if="showToolDropdown && availableTools.length > 0" @click.stop>
+                                        <!-- 操作按钮 -->
+                                        <div class="multiselect-actions">
+                                            <button class="multiselect-action-btn" @click="selectAllTools">全选</button>
+                                            <button class="multiselect-action-btn" @click="detailTools = []">清除</button>
+                                        </div>
+
+                                        <!-- 工具选项 -->
+                                        <div
+                                            v-for="tool in availableTools"
+                                            :key="tool.name"
+                                            class="multiselect-option"
+                                            :class="{ selected: detailTools.includes(tool.name) }"
+                                            @click="toggleToolItem(tool)"
+                                        >
+                                            <div class="multiselect-checkbox"></div>
+                                            <div class="multiselect-option-text">{{ tool.name }}</div>
+                                            <div class="multiselect-option-desc">{{ tool.description.substring(0, 40) }}...</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Save button (custom agents only) -->
+                            <div class="dialog-actions" v-if="!detailAgent.is_default">
+                                <button class="btn-cancel" @click="closeDetailDialog">取消</button>
+                                <button class="btn-confirm" @click="saveAgentDetail">保存</button>
+                            </div>
+                            <div class="dialog-actions" v-else>
+                                <button class="btn-cancel" @click="closeDetailDialog">关闭</button>
+                            </div>
+
+                            <!-- Delete section (custom agents only) -->
+                            <template v-if="!detailAgent.is_default">
+                                <hr class="dialog-divider" />
+                                <div v-if="!deleteConfirming">
+                                    <button class="btn-danger" @click="deleteAgent(detailAgent.id)">删除 Agent</button>
+                                </div>
+                                <div v-else>
+                                    <div style="font-size:13px;color:#606266;margin-bottom:10px;">删除后不可恢复，确认删除？</div>
+                                    <div style="display:flex;gap:8px;">
+                                        <button class="btn-cancel" @click="deleteConfirming=false">取消</button>
+                                        <button class="btn-danger-confirm" @click="deleteAgent(detailAgent.id)">确认</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            `
+            });
+
+            app.mount('#app');
+        </script>
+    </body>
+
+</html>
