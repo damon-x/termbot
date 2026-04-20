@@ -64,7 +64,7 @@ class Settings:
         if isinstance(config, str):
             if config.startswith("${") and config.endswith("}"):
                 env_var = config[2:-1]
-                return os.getenv(env_var, config)
+                return os.getenv(env_var)
             return config
         elif isinstance(config, dict):
             return {k: self._replace_env_vars(v) for k, v in config.items()}

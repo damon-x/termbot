@@ -45,8 +45,8 @@ class AnthropicClient:
         """
         llm_config = settings.llm
 
-        self.api_key = api_key if api_key else llm_config.get("api_key", "")
-        self.base_url = base_url if base_url else llm_config.get("base_url", self.DEFAULT_BASE_URL)
+        self.api_key = api_key or llm_config.get("api_key") or ""
+        self.base_url = base_url or llm_config.get("base_url") or self.DEFAULT_BASE_URL
         # Remove trailing slash for consistency
         if self.base_url.endswith('/'):
             self.base_url = self.base_url[:-1]

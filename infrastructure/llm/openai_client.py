@@ -44,7 +44,7 @@ class OpenAIClient:
         llm_config = settings.llm
 
         self.api_key = api_key if api_key else llm_config.get("api_key", "")
-        self.base_url = base_url if base_url else llm_config.get("base_url", "")
+        self.base_url = base_url or llm_config.get("base_url") or ""
         self.model = model if model else llm_config.get("model", "qwen3-max-preview")
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
@@ -244,7 +244,7 @@ class EmbeddingClient:
         llm_config = settings.llm
 
         self.api_key = api_key if api_key else llm_config.get("api_key", "")
-        self.base_url = base_url if base_url else llm_config.get("base_url", "")
+        self.base_url = base_url or llm_config.get("base_url") or ""
         self.model = model if model else llm_config.get("embed_model", "text-embedding-v4")
 
         self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)

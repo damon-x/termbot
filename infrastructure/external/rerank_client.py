@@ -25,6 +25,7 @@ class RerankClient:
         self,
         provider: str = PROVIDER_DASHSCOPE,
         api_key: str = None,
+        base_url: str = None,
         model: str = None
     ):
         """
@@ -33,6 +34,7 @@ class RerankClient:
         Args:
             provider: 服务商
             api_key: API 密钥
+            base_url: API 基础 URL（覆盖默认值）
             model: 模型名称
         """
         self.provider = provider
@@ -40,7 +42,7 @@ class RerankClient:
         if provider == self.PROVIDER_DASHSCOPE:
             self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
             self.model = model or "qwen3-rerank"
-            self.base_url = "https://dashscope.aliyuncs.com/api/v1/services/rerank"
+            self.base_url = base_url or "https://dashscope.aliyuncs.com/api/v1/services/rerank"
 
             if not self.api_key:
                 raise ValueError("DASHSCOPE_API_KEY not found in environment or config")
@@ -142,6 +144,7 @@ def get_rerank_client() -> RerankClient:
         _rerank_client = RerankClient(
             provider=config.get("provider", "dashscope"),
             api_key=config.get("api_key"),
+            base_url=config.get("base_url"),
             model=config.get("model")
         )
     return _rerank_client

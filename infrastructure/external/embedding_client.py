@@ -27,6 +27,7 @@ class EmbeddingClient:
         self,
         provider: str = PROVIDER_DASHSCOPE,
         api_key: str = None,
+        base_url: str = None,
         model: str = None,
         dimensions: int = 1024
     ):
@@ -36,6 +37,7 @@ class EmbeddingClient:
         Args:
             provider: 服务商（dashscope | openai）
             api_key: API 密钥（默认从环境变量读取）
+            base_url: API 基础 URL（覆盖默认值）
             model: 模型名称
             dimensions: 向量维度
         """
@@ -46,7 +48,7 @@ class EmbeddingClient:
             # 阿里云 DashScope（使用 OpenAI 兼容接口）
             self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
             self.model = model or "text-embedding-v4"
-            self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            self.base_url = base_url or "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
             if not self.api_key:
                 raise ValueError("DASHSCOPE_API_KEY not found in environment or config")
@@ -60,11 +62,12 @@ class EmbeddingClient:
             # OpenAI（未来支持）
             self.api_key = api_key or os.getenv("OPENAI_API_KEY")
             self.model = model or "text-embedding-3-small"
+            self.base_url = base_url
 
             if not self.api_key:
                 raise ValueError("OPENAI_API_KEY not found in environment or config")
 
-            self.client = OpenAI(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
 
         else:
             raise ValueError(f"Unsupported provider: {provider}")
@@ -161,6 +164,7 @@ def get_embedding_client() -> EmbeddingClient:
         _embedding_client = EmbeddingClient(
             provider=config.get("provider", "dashscope"),
             api_key=config.get("api_key"),
+            base_url=config.get("base_url"),
             model=config.get("model"),
             dimensions=config.get("dimensions", 1024)
         )
