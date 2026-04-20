@@ -122,13 +122,13 @@ Run the test suite:
 
 ```bash
 # From project root
-/Users/lixubo/work/termbot/.venv/bin/python tests/test_file_tools.py
+.venv/bin/python tests/test_file_tools.py
 ```
 
 Run the demonstration:
 
 ```bash
-/Users/lixubo/work/termbot/.venv/bin/python examples/file_tools_demo.py
+.venv/bin/python examples/file_tools_demo.py
 ```
 
 ## 🔍 Tool Schemas
