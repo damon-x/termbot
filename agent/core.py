@@ -37,6 +37,11 @@ class AgentConfig:
         tools: Optional list of pre-registered tools
         skill_manager: Optional SkillManager for injecting available skills
         response_handler: Optional handler for async responses
+        enable_mcp: Whether to enable MCP (Model Context Protocol) tools
+        mcp_config_path: Optional path to MCP configuration file
+        mcp_auto_start: Whether to auto-start MCP servers on initialization
+        allowed_skills: Optional list of allowed skill names
+        allowed_tools: Optional list of allowed tool names
     """
     llm_client: OpenAIClient
     max_iterations: int = 20
@@ -46,6 +51,8 @@ class AgentConfig:
     pty_manager: Optional[Any] = None
     tools: Optional[List[Tool]] = None
     enable_mcp: bool = True
+    mcp_config_path: Optional[str] = None
+    mcp_auto_start: bool = True
     skill_manager: Optional['SkillManager'] = None
     response_handler: Optional[ResponseHandler] = field(default=None, repr=False)
     allowed_skills: Optional[List[str]] = None  # 允许的技能名称列表
@@ -140,21 +147,30 @@ class Agent:
 
     def register_tool(self, tool: Tool) -> None:
         """
-        Register a tool with the agent.
+        Register a built-in tool with the agent.
 
-        If the tool has a set_agent method, it will be called with
-        this agent instance, allowing the tool to call back to the agent.
+        Subject to the allowed_tools whitelist defined in the agent profile.
 
         Args:
             tool: Tool instance to register
         """
-        # Allow tool to get agent reference if needed
         if hasattr(tool, 'set_agent'):
             tool.set_agent(self)
-        # Inject session-scoped context into tools that need it
         if hasattr(tool, 'set_context'):
             tool.set_context(self.context)
         self.react_loop.register_tool(tool)
+
+    def register_mcp_tool(self, tool: Tool) -> None:
+        """
+        Register an MCP tool with the agent.
+
+        MCP tools bypass the allowed_tools whitelist because their names are
+        discovered dynamically and cannot be pre-listed in a profile.
+
+        Args:
+            tool: MCPAdapterTool instance to register
+        """
+        self.react_loop.register_mcp_tool(tool)
 
     def unregister_tool(self, tool_name: str) -> bool:
         """

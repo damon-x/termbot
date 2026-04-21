@@ -7,7 +7,9 @@
       "max_results": 3,
       "similarity_threshold": 0.3,
       "max_length": 2000
-    }
+    },
+    "enable_mcp": true,
+    "mcp_auto_start": false
   },
   "llm": {
     "provider": "${LLM_PROVIDER}",
@@ -44,6 +46,11 @@
   "conversations": {
     "enabled": true,
     "base_dir": "~/.termbot/conversations"
+  },
+  "mcp": {
+    "enabled": true,
+    "config_path": null,
+    "auto_start": false
   },
   "logging": {
     "level": "INFO",

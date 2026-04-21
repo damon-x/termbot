@@ -445,6 +445,7 @@ When appropriate:
             return """Available commands:
   /help - Show this help
   /tools - List available tools
+  /mcp - Show MCP (Model Context Protocol) status
   /skills - List available skills
   /skill disable <name> - Disable a skill
   /skill enable <name> - Enable a skill
@@ -455,6 +456,8 @@ When appropriate:
         elif cmd == "/tools":
             tools = session.agent.get_available_tools()
             return f"Available tools ({len(tools)}):\n" + "\n".join(f"  • {tool}" for tool in tools)
+        elif cmd == "/mcp":
+            return self._get_mcp_status(session)
         elif cmd == "/history":
             history = session.agent.get_conversation_history()
             return f"Conversation has {len(history)} messages"
@@ -575,6 +578,23 @@ When appropriate:
             return f"✓ Skill '{skill_name}' has been enabled.\n  Use '/skill disable {skill_name}' to disable it."
         except Exception as e:
             return f"Error enabling skill: {e}"
+
+    def _get_mcp_status(self, session: 'WebSession') -> str:
+        """Get MCP (Model Context Protocol) status."""
+        from infrastructure.mcp import get_mcp_status_text, get_mcp_manager
+
+        try:
+            # Try to get MCP manager
+            mcp_manager = get_mcp_manager()
+
+            # Get status text
+            status_text = get_mcp_status_text(mcp_manager)
+
+            # Convert to HTML-friendly format (replace newlines with <br>)
+            return status_text.replace("\n", "<br>")
+
+        except Exception as e:
+            return f"Error getting MCP status: {e}"
 
     def get_session_count(self) -> int:
         """Get number of active sessions."""

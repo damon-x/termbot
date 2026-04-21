@@ -11,12 +11,16 @@ from agent.response_handler import AgentReplyHandler, ResponseHandler
 from agent.tools.toolsets import get_toolset_for_role
 from agent.tools.terminal import TerminalTool, TerminalBufferTool
 from agent.tools.file import create_file_tools
+from infrastructure.logging import get_logger
 
 if TYPE_CHECKING:
     from infrastructure.terminal.pty_manager import PTYManager
     from infrastructure.llm.client import OpenAIClient
     from agent.skills import SkillManager
     from agent.skills.skill import Skill
+    from infrastructure.mcp import MCPManager
+
+logger = get_logger("factory")
 
 
 class AgentFactory:
@@ -25,13 +29,15 @@ class AgentFactory:
 
     PTY Sharing: All agents (main + skill) use the same PTY.
     Context Isolation: Each agent has independent Context.
+    MCP Integration: Optionally integrates MCP tools for main agents.
     """
 
     def __init__(
         self,
         pty_manager: 'PTYManager',
         skill_manager: 'SkillManager',
-        llm_client: 'OpenAIClient'
+        llm_client: 'OpenAIClient',
+        mcp_manager: Optional['MCPManager'] = None
     ) -> None:
         """
         Initialize the factory.
@@ -40,10 +46,12 @@ class AgentFactory:
             pty_manager: Shared PTY Manager for all agents
             skill_manager: Skill Manager for skill discovery
             llm_client: LLM Client
+            mcp_manager: Optional MCP Manager for MCP tool integration
         """
         self.pty_manager = pty_manager
         self.skill_manager = skill_manager
         self.llm_client = llm_client
+        self.mcp_manager = mcp_manager
 
     def create_main_agent(
         self,
@@ -51,7 +59,9 @@ class AgentFactory:
         response_handler: Optional[ResponseHandler] = None,
         allowed_tools: Optional[list] = None,
         allowed_skills: Optional[list] = None,
-        agent_id: Optional[str] = None
+        agent_id: Optional[str] = None,
+        enable_mcp: Optional[bool] = None,
+        mcp_config_path: Optional[str] = None
     ) -> Agent:
         """
         Create main agent (using shared PTY).
@@ -62,10 +72,15 @@ class AgentFactory:
             allowed_tools: Optional list of allowed tool names (empty = all)
             allowed_skills: Optional list of allowed skill names (empty = all)
             agent_id: Agent Profile ID for context injection (e.g. "default")
+            enable_mcp: Whether to enable MCP tools (None uses config default)
+            mcp_config_path: Optional path to MCP configuration file
 
         Returns:
             Configured main Agent instance
         """
+        # Determine MCP settings
+        mcp_enabled = enable_mcp if enable_mcp is not None else True
+
         config = AgentConfig(
             llm_client=self.llm_client,
             max_iterations=20,
@@ -81,6 +96,8 @@ class AgentFactory:
                 llm_client=self.llm_client,
                 allowed_tools=allowed_tools,
             ),
+            enable_mcp=mcp_enabled,
+            mcp_config_path=mcp_config_path,
             allowed_skills=allowed_skills,
             allowed_tools=allowed_tools,
             response_handler=response_handler
@@ -327,4 +344,56 @@ When complete, provide:
         for file_tool in create_file_tools():
             agent.register_tool(file_tool)
 
+        # Register MCP tools if enabled (main agents only, not skill/sub agents)
+        if config.enable_mcp and config.role == "main":
+            self._register_mcp_tools(agent, config)
+
         return agent
+
+    def _register_mcp_tools(self, agent: Agent, config: AgentConfig) -> None:
+        """
+        Register MCP tools with the agent.
+
+        Args:
+            agent: Agent instance to register tools with
+            config: Agent configuration
+        """
+        try:
+            # Import MCP modules here to avoid hard dependency
+            from infrastructure.mcp import get_mcp_manager
+            from agent.tools.mcp_adapter import create_mcp_tools
+
+            # Get or create MCP manager
+            if self.mcp_manager is None:
+                mcp_manager = get_mcp_manager(
+                    config_path=config.mcp_config_path,
+                    auto_start=config.mcp_auto_start
+                )
+            else:
+                mcp_manager = self.mcp_manager
+
+            # Initialize MCP manager if needed (runs in its persistent loop)
+            if not mcp_manager._is_initialized:
+                mcp_manager.run_async(mcp_manager.initialize())
+
+            # Check if MCP is enabled
+            if not mcp_manager.is_enabled:
+                logger.info("MCP is disabled, skipping MCP tool registration")
+                return
+
+            # Create MCP adapter tools (runs in same persistent loop)
+            mcp_tools = mcp_manager.run_async(create_mcp_tools(mcp_manager))
+
+            # Register each MCP tool via the dedicated MCP path
+            for mcp_tool in mcp_tools:
+                agent.register_mcp_tool(mcp_tool)
+
+            logger.info(f"Registered {len(mcp_tools)} MCP tools with agent '{config.role}'")
+
+        except ImportError as e:
+            logger.warning(
+                f"MCP modules not available: {e}. "
+                "Install with: pip install 'anthropic[mcp]'"
+            )
+        except Exception as e:
+            logger.error(f"Failed to register MCP tools: {e}")

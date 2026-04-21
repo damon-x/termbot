@@ -53,6 +53,7 @@ class CLIHandler(BaseHandler):
         print("Available commands:")
         print("  /help     - Show this help message")
         print("  /tools    - List available tools")
+        print("  /mcp      - Show MCP (Model Context Protocol) status")
         print("  /skills   - List available skills")
         print("  /history  - Show conversation history")
         print("  /reset    - Reset conversation")
@@ -155,6 +156,8 @@ class CLIHandler(BaseHandler):
             self._show_help()
         elif cmd == "/tools":
             self._show_tools()
+        elif cmd == "/mcp":
+            self._show_mcp_status()
         elif cmd == "/history":
             self._show_history()
         elif cmd == "/reset":
@@ -191,6 +194,7 @@ class CLIHandler(BaseHandler):
         print("Available commands:")
         print("  /help     - Show this help message")
         print("  /tools    - List available tools")
+        print("  /mcp      - Show MCP (Model Context Protocol) status")
         print("  /history  - Show conversation history")
         print("  /reset    - Reset conversation")
         print("  /stop     - Stop current agent task")
@@ -208,6 +212,35 @@ class CLIHandler(BaseHandler):
         print(f"Available tools ({len(tools)}):")
         for tool in tools:
             print(f"  • {tool}")
+
+    def _show_mcp_status(self) -> None:
+        """Show MCP (Model Context Protocol) status."""
+        from infrastructure.mcp import get_mcp_status_text
+        from agent.factory import AgentFactory
+
+        print()
+
+        # Try to get MCP manager from agent factory
+        # The agent factory might have mcp_manager attribute
+        mcp_manager = None
+
+        # Try to access through agent's config
+        if hasattr(self.agent, 'config') and hasattr(self.agent.config, 'pty_manager'):
+            pty_manager = self.agent.config.pty_manager
+            # Try to find the factory that created this agent
+            # This is a bit hacky, but we don't have direct access to the factory
+            pass
+
+        # Try global MCP manager
+        try:
+            from infrastructure.mcp import get_mcp_manager
+            mcp_manager = get_mcp_manager()
+        except Exception:
+            pass
+
+        # Display status
+        status_text = get_mcp_status_text(mcp_manager)
+        print(status_text)
 
     def _show_history(self) -> None:
         """Show conversation history."""

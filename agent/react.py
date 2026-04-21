@@ -144,7 +144,7 @@ Available tools will be provided in the tools parameter. Use them when necessary
 
     def register_tool(self, tool: Tool) -> None:
         """
-        Register a tool for use in the ReAct loop.
+        Register a built-in tool for use in the ReAct loop.
 
         Tools are filtered based on allowed_tools configuration:
         - None or empty list: all tools allowed
@@ -153,11 +153,22 @@ Available tools will be provided in the tools parameter. Use them when necessary
         Args:
             tool: Tool instance to register
         """
-        # Check if tool is allowed
         if self.allowed_tools is not None and len(self.allowed_tools) > 0:
             if tool.schema.name not in self.allowed_tools:
                 return  # Skip this tool
 
+        self.tool_registry.register(tool)
+
+    def register_mcp_tool(self, tool: Tool) -> None:
+        """
+        Register an MCP tool for use in the ReAct loop.
+
+        MCP tools are discovered dynamically at runtime and are never subject
+        to the allowed_tools whitelist (which only applies to built-in tools).
+
+        Args:
+            tool: MCPAdapterTool instance to register
+        """
         self.tool_registry.register(tool)
 
     def unregister_tool(self, tool_name: str) -> bool:
