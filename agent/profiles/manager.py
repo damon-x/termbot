@@ -135,13 +135,26 @@ AVAILABLE_TOOLS = [
             {"name": "old_string", "type": "string", "description": "要替换的旧内容", "required": True},
             {"name": "new_string", "type": "string", "description": "新内容", "required": True}
         ]
+    },
+    {
+        "name": "ask_user",
+        "description": "通过交互式表单向用户提问，用户提交后表单数据会通过 WebSocket 返回",
+        "parameters": [
+            {
+                "name": "amis_schema",
+                "type": "object",
+                "description": "AMIS 表单 JSON Schema 对象，定义表单字段（不要包含 api/url 配置）",
+                "required": True
+            }
+        ]
     }
 ]
 
 _DEFAULT_ALLOWED_TOOLS = [
     "search_weather", "send_email", "send_file_user", "get_system_info",
     "add_memory", "list_notes", "edit_note", "delete_note", "search_memory",
-    "exec_terminal_cmd", "skill_executor", "async_sub_agent",
+    "exec_terminal_cmd", "use_skill", "delegate_task",
+    "read_file", "write_file", "edit_file", "ask_user",
 ]
 
 

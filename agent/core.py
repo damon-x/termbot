@@ -351,6 +351,61 @@ class Agent:
 
     # ==================== Async Message Queue ====================
 
+    def submit_form_result(self, tool_call_id: str, form_data: dict) -> bool:
+        """
+        Submit form data from a pending ask_user form.
+
+        Adds the tool result message to context and continues the ReAct loop
+        in a background thread without requiring a new user message.
+
+        Args:
+            tool_call_id: The tool_call_id of the pending ask_user call
+            form_data: The form field values submitted by the user
+
+        Returns:
+            True if form result was accepted, False if no matching pending ask_user
+        """
+        pending_id = self.context.get_state("pending_ask_user_tool_call_id")
+        if pending_id != tool_call_id:
+            logger.warning("form_submit tool_call_id mismatch or no pending ask_user",
+                           expected=pending_id, received=tool_call_id)
+            return False
+
+        import json as _json
+        self.context.add_message(
+            "tool",
+            _json.dumps(form_data, ensure_ascii=False),
+            metadata={"tool_call_id": tool_call_id}
+        )
+        self.context.set_state("pending_ask_user_tool_call_id", None)
+        self.context.set_state("pending_ask_user_schema", None)
+
+        with self._processing_lock:
+            if self._processing:
+                logger.warning("Agent is busy, form result dropped")
+                return False
+            self._processing = True
+
+        threading.Thread(target=self._run_continue_worker, daemon=True).start()
+        return True
+
+    def _run_continue_worker(self) -> None:
+        """Worker thread that continues the ReAct loop after form submission."""
+        from infrastructure.logging import logger_context
+        if self._session_id:
+            logger_context.set_session(session_id=self._session_id, mode="web")
+        if self._instance_id:
+            logger_context.set_agent(agent_id=self._instance_id)
+
+        try:
+            result = self.react_loop.continue_loop()
+            self._emit_response(result)
+        except Exception as e:
+            logger.error("Error in continue worker thread", error=str(e))
+        finally:
+            with self._processing_lock:
+                self._processing = False
+
     def submit(self, message: str) -> bool:
         """
         Submit a message to the agent's queue for async processing.
@@ -401,18 +456,23 @@ class Agent:
                     # Queue empty, stop processing
                     break
 
-                logger.info("Processing message from queue", 
+                logger.info("Processing message from queue",
                     queue_remaining=self._message_queue.qsize())
 
-                # Check if resuming a paused task
-                if self.is_paused():
-                    self.provide_user_answer(message)
-                    try:
-                        result = self.resume_task()
-                    except RuntimeError:
-                        result = self.process_message_with_result(message)
-                else:
-                    result = self.process_message_with_result(message)
+                # Clean up any pending ask_user form (user chose to chat instead of submitting)
+                pending_tool_call_id = self.context.get_state("pending_ask_user_tool_call_id")
+                if pending_tool_call_id:
+                    import json as _json
+                    self.context.add_message(
+                        "tool",
+                        "用户未提交表单，选择继续对话",
+                        metadata={"tool_call_id": pending_tool_call_id}
+                    )
+                    self.context.set_state("pending_ask_user_tool_call_id", None)
+                    self.context.set_state("pending_ask_user_schema", None)
+                    self.context.set_status("running")
+
+                result = self.process_message_with_result(message)
 
                 # Emit response via handler
                 self._emit_response(result)

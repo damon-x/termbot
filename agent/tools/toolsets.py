@@ -52,6 +52,7 @@ def _base_tools() -> List['Tool']:
         ListNotesTool,
         EditNoteTool,
         DeleteNoteTool,
+        AskUserTool,
     )
     return [
         AddMemoryTool(),
@@ -60,6 +61,7 @@ def _base_tools() -> List['Tool']:
         ListNotesTool(),
         EditNoteTool(),
         DeleteNoteTool(),
+        AskUserTool(),
     ]
 
 

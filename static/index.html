@@ -23,9 +23,9 @@
 
         <!-- Markdown 渲染 (marked.js) -->
         <script src="/static/marked.min.js"></script>
-        <!-- 代码高亮 (highlight.js) -->
-        <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-        <script src="https://cdn.bootcdn.net/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<!-- Amis (JSON-driven form renderer) -->
+        <link rel="stylesheet" href="/static/amis/sdk.css" />
+        <script src="/static/amis/sdk.js"></script>
 
         <style>
             * {
@@ -409,6 +409,50 @@
                 font-size: 12px;
                 color: #909399;
                 margin-top: 4px;
+            }
+
+            .message-ask-user-form {
+                align-items: flex-start;
+            }
+
+            .amis-form-bubble {
+                max-width: 92%;
+                padding: 0;
+                background: transparent;
+                display: block;
+            }
+
+            .amis-form-bubble .amis-wrapper {
+                background: #f0f2f5;
+                border-radius: 8px;
+                border-bottom-left-radius: 2px;
+                overflow: hidden;
+                padding: 4px 0;
+            }
+
+            .amis-form-bubble .form-expired-tip {
+                padding: 10px 14px;
+                font-size: 13px;
+                background: #f0f2f5;
+                border-radius: 8px;
+                border-bottom-left-radius: 2px;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .form-status-submitted {
+                color: #67c23a;
+                background: #f0f9ff;
+            }
+
+            .form-status-cancelled {
+                color: #909399;
+                background: #f5f7fa;
+            }
+
+            .form-status-icon {
+                font-size: 16px;
             }
 
             .chat-input-area {
@@ -1134,6 +1178,10 @@
 
                     const terminals = reactive({});
                     const chatMessages = reactive({});
+                    // Tracks pending ask_user form per tab: { tool_call_id, msgIndex }
+                    const pendingForms = {};
+                    // Stores amis instances for cleanup: key = 'tabId-msgIndex'
+                    const amisInstances = {};
 
                     // ===== Computed =====
 
@@ -1707,12 +1755,23 @@
                             socket.emit('start_conversion', { id: c_id });
                         });
 
+                        // Initialize session_id when connection is ready
+                        socket.on('session_ready', (data) => {
+                            if (terminals[id] && data.session_id) {
+                                terminals[id].session_id = data.session_id;
+                            }
+                        });
+
                         socket.on('terminal_output', (msg) => {
                             term.write(msg.data);
                         });
 
                         socket.on('chat_out', (data) => {
-                            addChatMessage(id, 'bot', data.message);
+                            if (data.type === 'ask_user_form') {
+                                addFormMessage(id, data.amis_schema);
+                            } else {
+                                addChatMessage(id, 'bot', data.message);
+                            }
                         });
 
                         socket.on('history_loaded', (data) => {
@@ -1752,7 +1811,7 @@
 
                         resizeObserver.observe(termEl);
 
-                        terminals[id] = { term, socket, fitAddon, resizeObserver };
+                        terminals[id] = { term, socket, fitAddon, resizeObserver, session_id: '' };
 
                         setTimeout(() => {
                             fitAddon.fit();
@@ -1799,11 +1858,134 @@
                         });
                     };
 
+                    const disablePendingForm = (id, status = 'cancelled') => {
+                        const pending = pendingForms[id];
+                        if (!pending) return;
+                        const msgs = chatMessages[id];
+                        if (msgs && msgs[pending.msgIndex]) {
+                            msgs[pending.msgIndex].disabled = true;
+                            msgs[pending.msgIndex].status = status;
+                        }
+                        const instanceKey = `${id}-${pending.msgIndex}`;
+                        if (amisInstances[instanceKey]) {
+                            try { amisInstances[instanceKey].unmount(); } catch (e) {}
+                            delete amisInstances[instanceKey];
+                        }
+                        delete pendingForms[id];
+                    };
+
+                    const mountAmisForm = (id, msgIndex, amisSchema) => {
+                        const containerId = `amis-form-${id}-${msgIndex}`;
+                        const container = document.getElementById(containerId);
+                        if (!container) {
+                            console.error('[AMIS] Container not found:', containerId);
+                            return;
+                        }
+
+                        console.log('[AMIS] Mounting form:', { containerId, amisSchema });
+
+                        if (typeof amisRequire === 'undefined') {
+                            console.error('[AMIS] amisRequire not loaded!');
+                            container.innerHTML = '<div style="color: red; padding: 10px;">AMIS 库未加载</div>';
+                            return;
+                        }
+
+                        const injectTabId = (actions) => {
+                            if (!actions) return actions;
+                            return actions.map(action => {
+                                if (action.onEvent?.click?.actions) {
+                                    return {
+                                        ...action,
+                                        onEvent: {
+                                            ...action.onEvent,
+                                            click: {
+                                                ...action.onEvent.click,
+                                                actions: injectTabId(action.onEvent.click.actions)
+                                            }
+                                        }
+                                    };
+                                }
+                                if (action.script && action.script.includes('submitAskUserForm')) {
+                                    return {
+                                        ...action,
+                                        script: action.script.replace(
+                                            /submitAskUserForm\s*\(\s*event\.data\s*\)/g,
+                                            `submitAskUserForm(event.data, '${id}')`
+                                        )
+                                    };
+                                }
+                                return action;
+                            });
+                        };
+
+                        const schema = {
+                            type: 'page',
+                            className: 'p-2',
+                            body: Object.assign({}, amisSchema, {
+                                type: 'form',
+                                wrapWithPanel: true,
+                                ...(amisSchema.actions ? { actions: injectTabId(amisSchema.actions) } : {
+                                    actions: [
+                                        {
+                                            type: 'button',
+                                            label: '提交',
+                                            level: 'primary',
+                                            onEvent: {
+                                                click: {
+                                                    actions: [
+                                                        {
+                                                            actionType: 'custom',
+                                                            script: `submitAskUserForm(event.data, '${id}')`
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    ]
+                                })
+                            })
+                        };
+
+                        console.log('[AMIS] Schema:', schema);
+
+                        try {
+                            const embed = amisRequire('amis/embed');
+                            const scoped = embed.embed(`#${containerId}`, schema);
+
+                            const instanceKey = `${id}-${msgIndex}`;
+                            amisInstances[instanceKey] = scoped;
+                            console.log('[AMIS] Form mounted successfully');
+                        } catch (error) {
+                            console.error('[AMIS] Failed to mount form:', error);
+                            container.innerHTML = '<div style="color: red; padding: 10px;">表单加载失败: ' + error.message + '</div>';
+                        }
+                    };
+
+                    const addFormMessage = (id, amisSchema) => {
+                        if (!chatMessages[id]) chatMessages[id] = [];
+                        const msgIndex = chatMessages[id].length;
+                        chatMessages[id].push({
+                            type: 'ask_user_form',
+                            amis_schema: amisSchema,
+                            disabled: false,
+                            status: 'active',  // 'active', 'submitted', 'cancelled'
+                            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        });
+                        pendingForms[id] = { msgIndex };
+                        nextTick(() => {
+                            mountAmisForm(id, msgIndex, amisSchema);
+                            const chatEl = document.getElementById(`chat-messages-${id}`);
+                            if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+                        });
+                    };
+
                     const sendChatMessage = (id) => {
                         const inputEl = document.getElementById(`chat-input-${id}`);
                         if (!inputEl) return;
                         const text = inputEl.value.trim();
                         if (!text) return;
+                        // Disable any pending ask_user form (user chose to chat instead)
+                        disablePendingForm(id, 'cancelled');
                         const socket = terminals[id]?.socket;
                         if (socket) socket.emit('chat_in', { message: text });
                         addChatMessage(id, 'user', text);
@@ -1829,6 +2011,45 @@
                     const renderMarkdown = (text) => {
                         if (!text) return '';
                         return marked.parse(text);
+                    };
+
+                    // ===== Global: Submit AMIS form to backend =====
+                    // This function is called by AMIS form submit button
+                    window.submitAskUserForm = async function(formData, tabId) {
+                        const terminal = terminals[tabId];
+
+                        if (!terminal) {
+                            alert('找不到终端信息，请刷新页面');
+                            return;
+                        }
+
+                        if (!terminal.session_id) {
+                            alert('会话信息丢失，请刷新页面');
+                            return;
+                        }
+
+                        try {
+                            const res = await fetch('/api/form_submit', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    session_id: terminal.session_id,
+                                    data: formData
+                                })
+                            });
+
+                            if (!res.ok) {
+                                const error = await res.json();
+                                alert('提交失败: ' + (error.error || '未知错误'));
+                                return;
+                            }
+
+                            // Form submitted successfully, mark as submitted
+                            disablePendingForm(tabId, 'submitted');
+
+                        } catch (error) {
+                            alert('提交失败: 网络错误');
+                        }
                     };
 
                     // ===== Lifecycle =====
@@ -2079,12 +2300,25 @@
                                             v-for="(msg, index) in chatMessages[tab.id]"
                                             :key="index"
                                             class="message-item"
-                                            :class="'message-' + msg.type"
+                                            :class="msg.type === 'ask_user_form' ? 'message-ask-user-form' : 'message-' + msg.type"
                                         >
-                                            <div
-                                                class="message-bubble"
-                                                v-html="msg.type === 'user' ? msg.text : renderMarkdown(msg.text)"
-                                            ></div>
+                                            <template v-if="msg.type === 'ask_user_form'">
+                                                <div class="message-bubble amis-form-bubble">
+                                                    <div v-if="msg.disabled" class="form-expired-tip" :class="'form-status-' + msg.status">
+                                                        <span v-if="msg.status === 'submitted'" class="form-status-icon">✓</span>
+                                                        <span v-else class="form-status-icon">×</span>
+                                                        <span v-if="msg.status === 'submitted'">表单已提交</span>
+                                                        <span v-else>表单已关闭</span>
+                                                    </div>
+                                                    <div v-else :id="'amis-form-' + tab.id + '-' + index" class="amis-wrapper"></div>
+                                                </div>
+                                            </template>
+                                            <template v-else>
+                                                <div
+                                                    class="message-bubble"
+                                                    v-html="msg.type === 'user' ? msg.text : renderMarkdown(msg.text)"
+                                                ></div>
+                                            </template>
                                             <div class="message-time">{{ msg.time }}</div>
                                         </div>
                                     </div>

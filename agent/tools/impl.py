@@ -187,7 +187,7 @@ class SendFileTool(Tool):
 
 
 class AskUserTool(Tool):
-    """Tool for asking user questions and pausing execution."""
+    """Tool for asking user questions via an AMIS-rendered form."""
 
     def __init__(self) -> None:
         self._context: Optional[Context] = None
@@ -201,44 +201,35 @@ class AskUserTool(Tool):
         return ToolSchema(
             name="ask_user",
             description=(
-                "Ask user a question and pause execution. "
-                "Use this when you need user confirmation, additional information, "
-                "or a choice between options before proceeding."
+                "Ask the user questions by rendering an interactive form. "
+                "Use this when you need structured input from the user before proceeding.\n\n"
+                "The 'amis_schema' parameter must be a valid Amis JSON schema object with structure:\n"
+                "- type: 'form'\n"
+                "- body: array of form fields (input-text, select, etc.)\n"
+                "- actions: array with submit button (NOT in body!)\n\n"
+                "IMPORTANT: Pass as JSON object (not string). Submit button must be at root level in 'actions', NOT in 'body'.\n"
+                "Example: {'type': 'form', 'title': 'Title', 'body': [{'type': 'input-text', 'name': 'field1', 'label': 'Field'}], 'actions': [{'type': 'button', 'label': '提交', 'onEvent': {'click': {'actions': [{'actionType': 'custom', 'script': 'submitAskUserForm(event.data)'}]}}}]}"
             ),
             parameters=[
                 ToolParameter(
-                    name="question",
-                    type=ToolParameterType.STRING,
-                    description="Question to ask user",
+                    name="amis_schema",
+                    type=ToolParameterType.OBJECT,
+                    description="Amis form schema as JSON object but not json string ! ex: {\"amis_schema\": {\"type\": \"form\"}} is good and {\"amis_schema\": \"{\\\"type\\\": \\\"form\\\"}\"} is very bad! Must have 'body' (fields) and 'actions' (submit button at root level, NOT in body).",
                     required=True
-                ),
-                ToolParameter(
-                    name="options",
-                    type=ToolParameterType.ARRAY,
-                    description=(
-                        "Optional list of answer choices (e.g., ['yes', 'no']). "
-                        "If provided, user should select from these options."
-                    ),
-                    required=False
                 )
             ]
         )
 
     def execute(self, **kwargs: Any) -> Any:
-        """Execute asking user question."""
-        question = kwargs.get("question", "")
-        options = kwargs.get("options")
-        context = self._context
+        """Store amis_schema in context and signal ReactLoop to pause."""
+        amis_schema = kwargs.get("amis_schema", {})
 
-        # Store question in context for Interface layer to read
-        if context:
-            context.set_state("pending_question", {
-                "question": question,
-                "options": options
-            })
-            context.set_waiting_user_answer(True)
-
-        # Return special marker to trigger pause
+        # Handle LLM occasionally returning amis_schema as a string instead of object
+        if isinstance(amis_schema, str):
+            # pass
+            return "Failed to parse amis_schema: need a JSON object but not json string ! ex: {\"amis_schema\": {\"type\": \"form\"}} is good and {\"amis_schema\": \"{\\\"type\\\": \\\"form\\\"}\"} is very bad!"
+        if self._context:
+            self._context.set_state("pending_ask_user_schema", amis_schema)
         return "__ASK_USER_PENDING__"
 
 

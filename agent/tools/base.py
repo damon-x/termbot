@@ -329,12 +329,10 @@ class ToolRegistry:
         start_time = time.time()
 
         try:
-            # INFO 级别：简洁的工具调用信息（包含入参）
-            # 格式化参数显示（限制长度）
-            args_preview = json.dumps(kwargs, ensure_ascii=False)
-            if len(args_preview) > 400:
-                args_preview = args_preview[:400] + "..."
-            logger.info(f"🔧 Tool: {name}({args_preview})")
+            # INFO 级别：完整的工具调用信息（包含完整入参）
+            # 显示完整参数，不截断
+            args_str = json.dumps(kwargs, ensure_ascii=False, indent=2)
+            logger.info(f"🔧 Tool: {name}(\n{args_str})")
 
             result = tool.execute(**kwargs)
 

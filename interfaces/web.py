@@ -31,25 +31,34 @@ class WebResponseHandler:
     Emits agent responses to the frontend via SocketIO.
     """
     
-    def __init__(self, socketio: SocketIO, sid: str) -> None:
+    def __init__(self, socketio: SocketIO, sid: str, session_id: str = '') -> None:
         """
         Initialize the handler.
-        
+
         Args:
             socketio: SocketIO instance for emitting
             sid: Session ID (room) to emit to
+            session_id: Business session ID for form submission
         """
         self.socketio = socketio
         self.sid = sid
+        self.session_id = session_id
     
     def on_response(self, result: ReactResult) -> None:
         """
         Handle agent response by emitting to frontend.
-        
+
         Args:
             result: The ReactResult from agent processing
         """
-        if result.status == "paused":
+        if result.status == "paused" and result.amis_schema:
+            self.socketio.emit('chat_out', {
+                'type': 'ask_user_form',
+                'amis_schema': result.amis_schema,
+                'session_id': self.session_id
+            }, room=self.sid)
+        elif result.status == "paused":
+            # Legacy fallback for non-amis paused state
             self.socketio.emit('chat_out', {
                 'type': 'question',
                 'message': result.response,
@@ -94,9 +103,12 @@ class WebSession:
             allowed_tools: Optional list of allowed tool names (empty = all)
             allowed_skills: Optional list of allowed skill names (empty = all)
         """
-        import random
+        import uuid
         self.sid = sid
-        self.session_id = str(random.randint(1_000_000_000, 9_999_999_999))
+        # Generate secure session_id: timestamp + uuid suffix
+        timestamp = int(__import__('time').time())
+        uuid_suffix = uuid.uuid4().hex[:8]
+        self.session_id = f"{timestamp}-{uuid_suffix}"
         self.socketio = socketio
 
         # Create independent PTY Manager for this session
@@ -119,7 +131,7 @@ class WebSession:
         )
 
         # Create response handler for this session
-        self.response_handler = WebResponseHandler(socketio, sid)
+        self.response_handler = WebResponseHandler(socketio, sid, self.session_id)
 
         # Create main agent through factory with response handler and permissions
         try:
@@ -227,10 +239,38 @@ When appropriate:
         self.socketio = socketio
         self.shared_llm_client = llm_client
         self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
-        self.sessions: Dict[str, WebSession] = {}
+        # Single dict with sid as key for simplicity
+        self.sessions: Dict[str, WebSession] = {}  # key: sid (SocketIO session ID)
 
         # Register event handlers
         self._register_event_handlers()
+
+    def _get_session_by_sid(self, sid: str) -> Optional[WebSession]:
+        """
+        Get session by SocketIO sid.
+
+        Args:
+            sid: SocketIO session ID
+
+        Returns:
+            WebSession or None
+        """
+        return self.sessions.get(sid)
+
+    def _get_session_by_business_id(self, session_id: str) -> Optional[WebSession]:
+        """
+        Get session by business session_id.
+
+        Args:
+            session_id: Business session ID
+
+        Returns:
+            WebSession or None
+        """
+        for session in self.sessions.values():
+            if session.session_id == session_id:
+                return session
+        return None
 
     def _register_event_handlers(self) -> None:
         """Register SocketIO event handlers."""
@@ -265,13 +305,20 @@ When appropriate:
                     allowed_tools=allowed_tools,
                     allowed_skills=allowed_skills
                 )
+                # Use sid as the key (simplified structure)
                 self.sessions[sid] = session
                 # Update logging context to use the business session_id
                 logger_context.set_session(session_id=session.session_id, mode="web")
-                logger.info("Session created", session_id=session.session_id, agent_id=agent_id)
+                logger.info("Session created", session_id=session.session_id, sid=sid, agent_id=agent_id)
             except Exception as e:
                 logger.error("Failed to create WebSession", sid=sid, error=str(e))
                 raise
+
+            # Send session_id to frontend immediately
+            emit('session_ready', {
+                'session_id': session.session_id,
+                'agent_id': agent_id
+            }, room=sid)
 
             # Notify client (compatible with original project)
             emit('start_conversation', {'id': ''})
@@ -284,7 +331,7 @@ When appropriate:
                 session = self.sessions[sid]
                 session.cleanup()
                 del self.sessions[sid]
-            
+
             # Clear logging context
             logger_context.clear()
 
@@ -301,7 +348,7 @@ When appropriate:
                 self.socketio.emit('chat_out', {'message': 'Session not found. Please refresh.'}, room=sid)
                 return
 
-            session = self.sessions[sid]
+            session = self._get_session_by_sid(sid)
             
             # Setup logging context for this request thread
             session.setup_logging_context()
@@ -316,6 +363,26 @@ When appropriate:
             # Response will be delivered via WebResponseHandler
             session.agent.submit(message)
 
+        @self.socketio.on('form_submit')
+        def handle_form_submit(data):
+            """Handle AMIS form submission from ask_user tool."""
+            sid = request.sid
+            if sid not in self.sessions:
+                return
+
+            session = self._get_session_by_sid(sid)
+            session.setup_logging_context()
+
+            tool_call_id = data.get('tool_call_id', '')
+            form_data = data.get('data', {})
+
+            success = session.agent.submit_form_result(tool_call_id, form_data)
+            if not success:
+                self.socketio.emit('chat_out', {
+                    'type': 'response',
+                    'message': '表单已失效，请重新发起请求。'
+                }, room=sid)
+
         @self.socketio.on('terminal_input')
         def handle_terminal_input(data):
             """Handle terminal input from client."""
@@ -325,7 +392,7 @@ When appropriate:
             if sid not in self.sessions:
                 return
 
-            session = self.sessions[sid]
+            session = self._get_session_by_sid(sid)
 
             # Write to this session's PTY
             result = session.pty_manager.write_web(user_input, sid)
@@ -341,7 +408,7 @@ When appropriate:
             rows = data.get('rows', 24)
 
             if sid in self.sessions:
-                session = self.sessions[sid]
+                session = self._get_session_by_sid(sid)
                 session.pty_manager.resize(cols, rows)
 
         @self.socketio.on('load_history')
@@ -355,7 +422,7 @@ When appropriate:
             if sid not in self.sessions:
                 return
 
-            session = self.sessions[sid]
+            session = self._get_session_by_sid(sid)
             session_id = data.get('session_id', '').strip()
             if not session_id:
                 return
@@ -425,7 +492,7 @@ When appropriate:
 
             if sid in self.sessions and terminal_content:
                 # Store terminal content in context for Agent to see
-                session = self.sessions[sid]
+                session = self._get_session_by_sid(sid)
                 session.agent.get_context().set_terminal_content(terminal_content.strip())
 
     def _handle_command(self, command: str, session: WebSession) -> str:
@@ -610,12 +677,13 @@ When appropriate:
         Returns:
             Session info dict or None
         """
-        if sid not in self.sessions:
+        session = self._get_session_by_sid(sid)
+        if not session:
             return None
 
-        session = self.sessions[sid]
         return {
             'sid': sid,
+            'session_id': session.session_id,
             'pty_pid': session.pty_manager.pid,
             'pty_running': session.pty_manager.is_running(),
             'lock_status': session.pty_manager.get_lock_status(),

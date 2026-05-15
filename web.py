@@ -198,6 +198,37 @@ def create_app():
         """Get list of all available tools for agent configuration."""
         return jsonify({'tools': AgentProfileManager.available_tools()})
 
+    @app.route('/api/form_submit', methods=['POST'])
+    def handle_form_submit():
+        """Handle AMIS form submission from ask_user tool."""
+        from flask import request
+
+        data = request.get_json()
+        form_data = data.get('data', {})
+        session_id = data.get('session_id')
+
+        if not session_id:
+            return jsonify({'error': 'session_id is required'}), 400
+
+        session = web_handler._get_session_by_business_id(session_id)
+        if not session:
+            return jsonify({'error': 'Invalid session'}), 404
+
+        session.setup_logging_context()
+
+        # Get the pending ask_user tool_call_id from agent context
+        pending_tool_call_id = session.agent.context.get_state("pending_ask_user_tool_call_id")
+
+        if not pending_tool_call_id:
+            return jsonify({'error': '没有等待中的表单'}), 400
+
+        # Submit form data to the pending tool call
+        success = session.agent.submit_form_result(pending_tool_call_id, form_data)
+        if not success:
+            return jsonify({'error': '表单已失效'}), 400
+
+        return jsonify({'success': True})
+
     # --- Conversation history REST API ---
 
     @app.route('/api/conversations/<agent_id>', methods=['GET'])

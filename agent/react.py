@@ -74,6 +74,8 @@ class ReactResult:
     question: Optional[str] = None
     options: Optional[List[str]] = None
     request_id: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    amis_schema: Optional[Dict[str, Any]] = None
 
 
 class ReactLoop:
@@ -200,6 +202,123 @@ Available tools will be provided in the tools parameter. Use them when necessary
         with logger_context.scope(request_id=request_id):
             return self._run_inner(user_input, request_id)
 
+    def continue_loop(self) -> ReactResult:
+        """
+        Continue the ReAct loop from the current context without adding a new user message.
+
+        Used after form submission: the tool result message has already been added to
+        context by Agent.submit_form_result(), so we just resume the loop directly.
+
+        Returns:
+            ReactResult with the final response and reasoning steps
+        """
+        import random
+        request_id = str(random.randint(1_000_000_000, 9_999_999_999))
+        self.context.set_request_id(request_id)
+        self.context.set_status("running")
+
+        steps: List[ReactStep] = []
+        self._stop_event.clear()
+
+        with logger_context.scope(request_id=request_id):
+            for iteration in range(self.max_iterations):
+                if self._stop_event.is_set():
+                    self.context.set_status("stopped")
+                    return ReactResult(
+                        response="已停止当前任务。",
+                        steps=steps,
+                        success=True,
+                        status="stopped",
+                        request_id=request_id
+                    )
+
+                tools = self.tool_registry.get_tool_schemas()
+                messages = self._build_messages()
+
+                try:
+                    response = self.llm_client.chat_with_tools(
+                        messages=messages,
+                        tools=tools if tools else None
+                    )
+                except Exception as e:
+                    return ReactResult(
+                        response=f"Error communicating with LLM: {e}",
+                        steps=steps,
+                        success=False,
+                        error=str(e),
+                        status="failed",
+                        request_id=request_id
+                    )
+
+                if response.function_call:
+                    tool_call_id = response.function_call.id
+                    self.context.add_message(
+                        "assistant",
+                        "",
+                        metadata={
+                            "tool_calls": [
+                                {
+                                    "id": tool_call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": response.function_call.name,
+                                        "arguments": json.dumps(response.function_call.arguments)
+                                    }
+                                }
+                            ]
+                        }
+                    )
+
+                    step = self._execute_function_call(response.function_call)
+                    steps.append(step)
+
+                    if step.observation == "__ASK_USER_PENDING__":
+                        amis_schema = self.context.get_state("pending_ask_user_schema", {})
+                        pending_tool_call_id = response.function_call.id
+                        self.context.set_state("pending_ask_user_tool_call_id", pending_tool_call_id)
+                        self.context.set_status("paused")
+                        return ReactResult(
+                            response="",
+                            steps=steps,
+                            status="paused",
+                            tool_call_id=pending_tool_call_id,
+                            amis_schema=amis_schema,
+                            request_id=request_id
+                        )
+
+                    observation = step.observation if step.observation is not None else ""
+                    self.context.add_message(
+                        "tool",
+                        observation,
+                        metadata={"tool_call_id": response.function_call.id}
+                    )
+
+                    if step.is_final:
+                        break
+                else:
+                    final_response = response.content or "I apologize, but I couldn't generate a response."
+                    steps.append(ReactStep(thought=final_response, is_final=True))
+                    self.context.add_message("assistant", final_response)
+                    self.context.set_status("success")
+                    return ReactResult(
+                        response=final_response,
+                        steps=steps,
+                        success=True,
+                        status="success",
+                        request_id=request_id
+                    )
+
+            final_response = self._generate_final_response(steps)
+            self.context.add_message("assistant", final_response)
+            self.context.set_status("success")
+            return ReactResult(
+                response=final_response,
+                steps=steps,
+                success=True,
+                status="success",
+                request_id=request_id
+            )
+
     def _run_inner(self, user_input: str, request_id: str) -> ReactResult:
         """Inner ReAct loop execution within an established logging scope."""
         # 简洁的用户输入日志
@@ -288,29 +407,18 @@ Available tools will be provided in the tools parameter. Use them when necessary
 
                 # Check if ask_user triggered a pause
                 if step.observation == "__ASK_USER_PENDING__":
-                    question_data = self.context.get_state("pending_question", {})
-                    self.context.add_message(
-                        "tool",
-                        "Waiting for user input...",
-                        metadata={"tool_call_id": response.function_call.id}
-                    )
+                    amis_schema = self.context.get_state("pending_ask_user_schema", {})
+                    pending_tool_call_id = response.function_call.id
+                    # Store tool_call_id so resume can add the tool result message later
+                    self.context.set_state("pending_ask_user_tool_call_id", pending_tool_call_id)
                     self.context.set_status("paused")
 
-                    # Build response with full question for frontend display
-                    question_text = question_data.get("question", "")
-                    options = question_data.get("options")
-                    if options:
-                        options_text = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
-                        full_response = f"{question_text}\n\n选项：\n{options_text}"
-                    else:
-                        full_response = question_text
-
                     return ReactResult(
-                        response=full_response,
+                        response="",
                         steps=steps,
                         status="paused",
-                        question=question_data.get("question"),
-                        options=question_data.get("options"),
+                        tool_call_id=pending_tool_call_id,
+                        amis_schema=amis_schema,
                         request_id=request_id
                     )
 
@@ -729,29 +837,16 @@ Please summarize the results in a clear, helpful way for the user."""
 
                 # Check if ask_user triggered a pause again
                 if step.observation == "__ASK_USER_PENDING__":
-                    question_data = self.context.get_state("pending_question", {})
-                    self.context.add_message(
-                        "tool",
-                        "Waiting for user input...",
-                        metadata={"tool_call_id": response.function_call.id}
-                    )
+                    amis_schema = self.context.get_state("pending_ask_user_schema", {})
+                    pending_tool_call_id = response.function_call.id
+                    self.context.set_state("pending_ask_user_tool_call_id", pending_tool_call_id)
                     self.context.set_status("paused")
-
-                    # Build response with full question for frontend display
-                    question_text = question_data.get("question", "")
-                    options = question_data.get("options")
-                    if options:
-                        options_text = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(options))
-                        full_response = f"{question_text}\n\n选项：\n{options_text}"
-                    else:
-                        full_response = question_text
-
                     return ReactResult(
-                        response=full_response,
+                        response="",
                         steps=steps,
                         status="paused",
-                        question=question_data.get("question"),
-                        options=question_data.get("options")
+                        tool_call_id=pending_tool_call_id,
+                        amis_schema=amis_schema
                     )
 
                 # Add the tool result to context with tool_call_id
